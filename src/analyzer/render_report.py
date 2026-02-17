@@ -1,4 +1,4 @@
-"""Генератор интерактивного HTML-отчёта для метрики M1 (Security Topology Graph).
+"""Генератор интерактивного HTML-отчёта CSA (все метрики безопасности).
 
 Читает combined.json и создаёт самодостаточный HTML-файл с D3.js force-directed
 графом и панелью сводных показателей в HUD-стилистике.
@@ -25,7 +25,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         Пространство имён с полями ``input`` и ``output``.
     """
     parser = argparse.ArgumentParser(
-        description="Генерация интерактивного HTML-отчёта M1 (Security Topology Graph)",
+        description="Генерация интерактивного HTML-отчёта CSA (все метрики)",
     )
     parser.add_argument(
         "--input", "-i",
@@ -34,8 +34,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--output", "-o",
-        default="m1-report.html",
-        help="Путь к выходному HTML-файлу (по умолчанию: m1-report.html)",
+        default="csa-report.html",
+        help="Путь к выходному HTML-файлу (по умолчанию: csa-report.html)",
     )
     return parser.parse_args(argv)
 
@@ -231,7 +231,7 @@ def _render_html(graph_data: dict[str, Any]) -> str:
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>M1 Security Topology &mdash; {_escape_html(meta["repo_name"])}</title>
+<title>CSA Security Report &mdash; {_escape_html(meta["repo_name"])}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -647,7 +647,7 @@ html, body {{
     <span class="dot-corner bl"></span>
     <span class="dot-corner br"></span>
     <div class="hud-panel-header">
-      <div class="hud-panel-title">M1 &middot; SECURITY TOPOLOGY GRAPH</div>
+      <div class="hud-panel-title">CSA &middot; SECURITY REPORT</div>
       <div class="hud-panel-meta">
         <span>repo: <b>{_escape_html(meta["repo_name"])}</b></span>
         <span>mode: <b>{_escape_html(meta["mode"])}</b></span>
@@ -1132,7 +1132,7 @@ def main(argv: list[str] | None = None) -> int:
     for n in graph_data["nodes"]:
         node_counts[n["type"]] = node_counts.get(n["type"], 0) + 1
 
-    print(f"Отчёт M1 сгенерирован: {output_path}")
+    print(f"Отчёт CSA сгенерирован: {output_path}")
     print(f"  Узлов: {len(graph_data['nodes'])} "
           f"(entrypoint={node_counts.get('entrypoint', 0)}, "
           f"sink={node_counts.get('sink', 0)}, "
