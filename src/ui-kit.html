@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AIComPet UI-Kit</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <style>
+    /* ═══════════════════════════════════════════════════════════════════════════
+       FONTS - Ledger Style
+       ═══════════════════════════════════════════════════════════════════════════ */
+    @font-face {
+      font-family: 'JetBrains Mono';
+      src: url('/fonts/JetBrainsMono-Regular.woff2') format('woff2');
+      font-weight: 400;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: 'JetBrains Mono';
+      src: url('/fonts/JetBrainsMono-Medium.woff2') format('woff2');
+      font-weight: 500;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: 'JetBrains Mono';
+      src: url('/fonts/JetBrainsMono-SemiBold.woff2') format('woff2');
+      font-weight: 600;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: 'JetBrains Mono';
+      src: url('/fonts/JetBrainsMono-Bold.woff2') format('woff2');
+      font-weight: 700;
+      font-style: normal;
+      font-display: swap;
+    }
+
+    :root {
+      /* Dark Theme (AIComPet) */
+      --bg: #000000;
+      --surface-1: #0d0d0d;
+      --surface-2: #171717;
+      --surface-3: #1f1f1f;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-strong: rgba(255, 255, 255, 0.15);
+      --text-primary: #ffffff;
+      --text-secondary: #a3a3a3;
+      --text-tertiary: #6b6b6b;
+      --accent: #fb923c;
+      --accent-soft: rgba(249, 115, 22, 0.1);
+
+      /* Light Theme (Template) */
+      --light-bg: #ffffff;
+      --light-surface: rgba(255, 255, 255, 0.98);
+      --light-border: #eaeaea;
+      --light-text: #000000;
+      --light-text-muted: #666666;
+
+      /* HUD cursors */
+      --cursor-hud-default: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='%23f97316' stroke-width='1.5' d='M2 2h6M2 2v6M22 2h-6M22 2v6M2 22h6M2 22v-6M22 22h-6M22 22v-6'/%3E%3Ccircle cx='12' cy='12' r='2' fill='%23f97316'/%3E%3C/svg%3E") 12 12, crosshair;
+      --cursor-hud-pointer: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='%23ffffff' stroke-width='1.5' d='M2 2h6M2 2v6M22 2h-6M22 2v6M2 22h6M2 22v-6M22 22h-6M22 22v-6'/%3E%3Crect x='10' y='10' width='4' height='4' fill='%23f97316'/%3E%3C/svg%3E") 12 12, pointer;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'JetBrains Mono', monospace;
+      background: var(--bg);
+      color: var(--text-primary);
+      padding: 2rem;
+      min-height: 100vh;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════════
+       CURSOR (HUD)
+       ═══════════════════════════════════════════════════════════════════════════ */
+
+    html, body {
+      cursor: var(--cursor-hud-default);
+    }
+
+    *:not(input):not(textarea):not(select):not([contenteditable]) {
+      cursor: var(--cursor-hud-default);
+    }
+
+    input, textarea, select, [contenteditable] {
+      cursor: text;
+    }
+
+    button:not(:disabled), a, [role="button"], .clickable, .cursor-pointer,
+    label[for], summary, [type="checkbox"], [type="radio"],
+    [tabindex]:not([tabindex="-1"]):not(input):not(textarea):not(select) {
+      cursor: var(--cursor-hud-pointer) !important;
+    }
+
+    button:disabled, [aria-disabled="true"], .disabled, .cursor-not-allowed {
+      cursor: not-allowed !important;
+    }
+
+    h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.02em;
+    }
+
+    h2 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: var(--accent);
+      margin: 3rem 0 1.5rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h3 {
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--text-tertiary);
+      margin-bottom: 1rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    .subtitle {
+      color: var(--text-tertiary);
+      font-size: 0.875rem;
+      margin-bottom: 2rem;
+    }
+
+    .section { margin-bottom: 3rem; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 2rem; }
+    .flex-row { display: flex; gap: 1rem; flex-wrap: wrap; align-items: flex-start; }
+
+    /* ═══════════════════════════════════════════════════════════════════════════
+       1. CARD COMPONENT - HUD Style
+       ═══════════════════════════════════════════════════════════════════════════ */
+
+    .card-hud {
+      position: relative;
+      background: var(--surface-1);
+      border: 1px solid var(--border);
+      padding: 1.5rem;
+      min-height: 200px;
+    }
+
+    .card-hud.glass {
+      background: rgba(13, 13, 13, 0.85);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+    }
+
+    .card-hud.elevated {
+      background: var(--surface-2);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    }
+
+    .card-hud.accent-border { border-color: rgba(249, 115, 22, 0.3); }
+    .card-hud.accent-glow { box-shadow: 0 0 40px rgba(249, 115, 22, 0.15); }
+
+    /* Corner decorations */
+    .corner { position: absolute; width: 8px; height: 8px; z-index: 2; }
+    .corner::before, .corner::after { content: ''; position: absolute; background: var(--accent); }
+    .corner.tl { top: -1px; left: -1px; }
+    .corner.tr { top: -1px; right: -1px; }
+    .corner.bl { bottom: -1px; left: -1px; }
+    .corner.br { bottom: -1px; right: -1px; }
+    .corner.tl::before { width: 8px; height: 1px; top: 0; left: 0; }
+    .corner.tl::after { width: 1px; height: 8px; top: 0; left: 0; }
+    .corner.tr::before { width: 8px; height: 1px; top: 0; right: 0; }
+    .corner.tr::after { width: 1px; height: 8px; top: 0; right: 0; }
+    .corner.bl::before { width: 8px; height: 1px; bottom: 0; left: 0; }
+    .corner.bl::after { width: 1px; height: 8px; bottom: 0; left: 0; }
+    .corner.br::before { width: 8px; height: 1px; bottom: 0; right: 0; }
+    .corner.br::after { width: 1px; height: 8px; bottom: 0; right: 0; }
+
+    /* Dot corners */
+    .dot-corner { position: absolute; width: 4px; height: 4px; background: var(--text-secondary); z-index: 2; }
+    .dot-corner.tl { top: 6px; left: 6px; }
+    .dot-corner.tr { top: 6px; right: 6px; }
+    .dot-corner.bl { bottom: 6px; left: 6px; }
+    .dot-corner.br { bottom: 6px; right: 6px; }
+
+    /* Bracket corners */
+    .bracket { position: absolute; width: 12px; height: 12px; z-index: 2; }
+    .bracket::before, .bracket::after { content: ''; position: absolute; background: var(--border-strong); }
+    .bracket.tl { top: 0; left: 0; }
+    .bracket.tr { top: 0; right: 0; }
+    .bracket.bl { bottom: 0; left: 0; }
+    .bracket.br { bottom: 0; right: 0; }
+    .bracket.tl::before { width: 12px; height: 1px; top: 0; left: 0; }
+    .bracket.tl::after { width: 1px; height: 12px; top: 0; left: 0; }
+    .bracket.tr::before { width: 12px; height: 1px; top: 0; right: 0; }
+    .bracket.tr::after { width: 1px; height: 12px; top: 0; right: 0; }
+    .bracket.bl::before { width: 12px; height: 1px; bottom: 0; left: 0; }
+    .bracket.bl::after { width: 1px; height: 12px; bottom: 0; left: 0; }
+    .bracket.br::before { width: 12px; height: 1px; bottom: 0; right: 0; }
+    .bracket.br::after { width: 1px; height: 12px; bottom: 0; right: 0; }
+
+    .card-label { font-size: 0.6875rem; font-weight: 500; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.15em; margin-bottom: 0.5rem; }
+    .card-title { font-size: 1.125rem; font-weight: 600; color: var(--text-primary); margin-bottom: 0.75rem; }
+    .card-description { font-size: 0.8125rem; color: var(--text-secondary); line-height: 1.5; }
+
+    /* ═══════════════════════════════════════════════════════════════════════════
+       2. BUTTON COMPONENT - Clipped Style
+       ═══════════════════════════════════════════════════════════════════════════ */
+
+    .btn-clipped {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.75rem 1.5rem;
+      background: transparent;
+      border: none;
+      color: var(--text-primary);
+      font-family: inherit;
+      font-size: 0.8125rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      z-index: 0;
+      --btn-cut: 8px;
+      --btn-border-color: var(--border);
+      --btn-border-hover-color: var(--border-strong);
+      --btn-fill: var(--bg);
+      --btn-fill-hover: var(--surface-2);
+      clip-path: polygon(0 0, calc(100% - var(--btn-cut)) 0, 100% var(--btn-cut), 100% 100%, var(--btn-cut) 100%, 0 calc(100% - var(--btn-cut)));
+    }
+
+    .btn-clipped::before, .btn-clipped::after { content: ''; position: absolute; inset: 0; pointer-events: none; }
+    .btn-clipped::before { background: var(--btn-border-color); z-index: -2; }
+    .btn-clipped::after {
+      inset: 1px;
+      background: var(--btn-fill);
+      clip-path: polygon(0 0, calc(100% - var(--btn-cut)) 0, 100% var(--btn-cut), 100% 100%, var(--btn-cut) 100%, 0 calc(100% - var(--btn-cut)));
+      z-index: -1;
+      transition: background-color 0.2s ease;
+    }
+
+    .btn-clipped:hover { --btn-border-color: var(--btn-border-hover-color); --btn-fill: var(--btn-fill-hover); }
+    .btn-clipped.primary { --btn-border-color: var(--accent); --btn-border-hover-color: #fdba74; --btn-fill: var(--accent); --btn-fill-hover: #fdba74; color: #000000; }
+    .btn-clipped.inverted { --btn-border-color: var(--text-primary); --btn-border-hover-color: var(--text-secondary); --btn-fill: var(--text-primary); --btn-fill-hover: var(--text-secondary); color: var(--bg); }
+    .btn-clipped.ghost { --btn-border-color: transparent; --btn-border-hover-color: transparent; --btn-fill: transparent; --btn-fill-hover: var(--accent-soft); }
+    .btn-clipped.small { padding: 0.5rem 1rem; font-size: 0.75rem; }
+    .btn-clipped.large { padding: 1rem 2rem; font-size: 0.875rem; }
+    .btn-clipped.full-width { width: 100%; }
+
+    /* ═══════════════════════════════════════════════════════════════════════════
+       3. HUD PANEL
+       ═══════════════════════════════════════════════════════════════════════════ */
+
+    .hud-panel {
+      position: relative;
+      background: rgba(13, 13, 13, 0.85);
+      backdrop-filter: blur(15px);
+      -webkit-backdrop-filter: blur(15px);
+      border: 1px solid var(--border);
+      padding: 1.25rem;
+    }
+    .hud-panel.compact { padding: 0.75rem 1rem; }
+    .hud-panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border); }
+    .hud-panel-title { font-size: 0.6875rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.15em; }
+    .hud-panel-status { font-size: 0.625rem; color: var(--accent); text-transform: uppercase; letter-spacing: 0.1em; }
+    .hud-panel-content { font-size: 0.8125rem; color: var(--text-primary); line-height: 1.6; }
+
+    /* ═══════════════════════════════════════════════════════════════════════════
+       4. STAT CARD
+       ═══════════════════════════════════════════════════════════════════════════ */
+
+    .stat-card { position: relative; background: var(--surface-1); border: 1px solid var(--border); padding: 1rem 1.25rem; }
+    .stat-label { font-size: 0.625rem; font-weight: 500; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.15em; margin-bottom: 0.5rem; }
+    .stat-value { font-size: 1.75rem; font-weight: 700; color: var(--text-primary); line-height: 1; }
+    .stat-value.accent { color: var(--accent); }
+    .stat-unit { font-size: 0.875rem; font-weight: 400; color: var(--text-tertiary); margin-left: 0.25rem; }
+    .stat-change { font-size: 0.6875rem; margin-top: 0.5rem; }
+    .stat-change.positive { color: #34d399; }
+    .stat-change.negative { color: #f87171; }
+
+    /* ═══════════════════════════════════════════════════════════════════════════
+       5. INPUT FIELD
+       ═══════════════════════════════════════════════════════════════════════════ */
+
+    .input-field { position: relative; width: 100%; }
+    .input-label { display: block; font-size: 0.6875rem; font-weight: 500; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.5rem; }
+    .input-control { width: 100%; padding: 0.75rem 1rem; background: var(--surface-1); border: 1px solid var(--border); color: var(--text-primary); font-family: inherit; font-size: 0.875rem; transition: border-color 0.2s ease, box-shadow 0.2s ease; }
+    .input-control:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.2); }
+    .input-control::placeholder { color: var(--text-tertiary); }
+
+    /* ═══════════════════════════════════════════════════════════════════════════
+       6. BADGE
+       ═══════════════════════════════════════════════════════════════════════════ */
+
+    .badge { display: inline-flex; align-items: center; padding: 0.25rem 0.625rem; font-size: 0.625rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-secondary); }
+    .badge.success { background: rgba(16, 185, 129, 0.1); border-color: rgba(16, 185, 129, 0.3); color: #34d399; }
+    .badge.warning { background: rgba(245, 158, 11, 0.1); border-color: rgba(245, 158, 11, 0.3); color: #fbbf24; }
+    .badge.danger { background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.3); color: #f87171; }
+    .badge.accent { background: var(--accent-soft); border-color: rgba(249, 115, 22, 0.3); color: var(--accent); }
+
+    /* ═══════════════════════════════════════════════════════════════════════════
+       7. PROGRESS BAR
+       ═══════════════════════════════════════════════════════════════════════════ */
+
+    .progress-bar { position: relative; width: 100%; height: 4px; background: var(--surface-2); overflow: hidden; }
+    .progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent), #fdba74); transition: width 0.3s ease; }
+    .progress-bar.thick { height: 8px; }
+
+    /* ═══════════════════════════════════════════════════════════════════════════
+       8. LIGHT THEME
+       ═══════════════════════════════════════════════════════════════════════════ */
+
+    .theme-light {
+      --bg: #ffffff;
+      --surface-1: rgba(255, 255, 255, 0.98);
+      --surface-2: #f5f5f5;
+      --border: #eaeaea;
+      --border-strong: #d3d3d3;
+      --text-primary: #000000;
+      --text-secondary: #666666;
+      --text-tertiary: #999999;
+    }
+    .theme-light .card-hud { background: var(--surface-1); backdrop-filter: blur(10px); }
+    .theme-light .corner::before, .theme-light .corner::after { background: var(--text-primary); }
+
+    /* ═══════════════════════════════════════════════════════════════════════════
+       9. COLOR PALETTE DISPLAY
+       ═══════════════════════════════════════════════════════════════════════════ */
+
+    .color-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 0.5rem; }
+    .color-swatch { aspect-ratio: 1; display: flex; flex-direction: column; justify-content: flex-end; padding: 0.5rem; font-size: 0.625rem; border: 1px solid var(--border); }
+    .color-name { font-weight: 600; mix-blend-mode: difference; }
+    .color-value { opacity: 0.7; mix-blend-mode: difference; }
+
+    /* ═══════════════════════════════════════════════════════════════════════════
+       10. TYPOGRAPHY
+       ═══════════════════════════════════════════════════════════════════════════ */
+
+    .type-sample { margin-bottom: 1rem; }
+    .type-label { font-size: 0.625rem; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.25rem; }
+    .type-heading-xl { font-size: 2.5rem; font-weight: 700; letter-spacing: -0.02em; }
+    .type-heading-lg { font-size: 1.75rem; font-weight: 600; letter-spacing: -0.01em; }
+    .type-heading-md { font-size: 1.25rem; font-weight: 600; }
+    .type-body { font-size: 0.875rem; line-height: 1.6; }
+    .type-caption { font-size: 0.75rem; color: var(--text-secondary); }
+    .type-mono { font-family: 'JetBrains Mono', monospace; }
+
+    /* ═══════════════════════════════════════════════════════════════════════════
+       11. 3D BUTTON
+       ═══════════════════════════════════════════════════════════════════════════ */
+
+    .btn-3d {
+      position: relative;
+      z-index: 1;
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 2.4rem;
+      padding: 0.9rem 2rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      overflow: hidden;
+      cursor: pointer;
+      border: none;
+      background: transparent;
+      color: var(--text-primary);
+    }
+    .btn-3d__text-wrapper { position: relative; display: block; overflow: hidden; line-height: 1.1; }
+    .btn-3d__text { display: block; transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+    .btn-3d__text--front { transform: translateY(0); }
+    .btn-3d__text--back { position: absolute; inset: 0; transform: translateY(110%); }
+    .btn-3d:hover .btn-3d__text--front { transform: translateY(-110%); }
+    .btn-3d:hover .btn-3d__text--back { transform: translateY(0); }
+    .btn-3d--clipped {
+      --btn-3d-cut: 8px;
+      --btn-3d-border-color: var(--border);
+      --btn-3d-fill: var(--bg);
+      clip-path: polygon(0 0, calc(100% - var(--btn-3d-cut)) 0, 100% var(--btn-3d-cut), 100% 100%, var(--btn-3d-cut) 100%, 0 calc(100% - var(--btn-3d-cut)));
+    }
+    .btn-3d--clipped::before, .btn-3d--clipped::after { content: ''; position: absolute; inset: 0; pointer-events: none; }
+    .btn-3d--clipped::before { background: var(--btn-3d-border-color); z-index: -2; }
+    .btn-3d--clipped::after { inset: 1px; background: var(--btn-3d-fill); clip-path: polygon(0 0, calc(100% - var(--btn-3d-cut)) 0, 100% var(--btn-3d-cut), 100% 100%, var(--btn-3d-cut) 100%, 0 calc(100% - var(--btn-3d-cut))); z-index: -1; transition: background-color 0.2s ease; }
+    .btn-3d--clipped:hover::before { background: var(--border-strong); }
+    .btn-3d--clipped:hover::after { background: var(--surface-2); }
+    .btn-3d--primary { --btn-3d-border-color: var(--accent); --btn-3d-fill: var(--accent); color: #000; }
+    .btn-3d--clipped.btn-3d--primary:hover::before { background: #fdba74; }
+    .btn-3d--clipped.btn-3d--primary:hover::after { background: #fdba74; }
+    .btn-3d--invert { --btn-3d-border-color: #fff; --btn-3d-fill: #fff; color: #000; }
+    .btn-3d--clipped.btn-3d--invert:hover::before { background: #f5f5f5; }
+    .btn-3d--clipped.btn-3d--invert:hover::after { background: #f5f5f5; }
+
+    /* ═══════════════════════════════════════════════════════════════════════════
+       12. TAG BRACKETS
+       ═══════════════════════════════════════════════════════════════════════════ */
+
+    .tag-bracket { position: relative; display: inline-block; padding: 0.2rem; }
+    .tag-bracket__corner { position: absolute; width: 0.5rem; height: 0.5rem; pointer-events: none; }
+    .tag-bracket__corner::before, .tag-bracket__corner::after { content: ''; position: absolute; background-color: var(--border-strong); }
+    .tag-bracket__corner--tl { top: 0; left: 0; }
+    .tag-bracket__corner--tl::before { width: 0.5rem; height: 1px; top: 0; left: 0; }
+    .tag-bracket__corner--tl::after { width: 1px; height: 0.5rem; top: 0; left: 0; }
+    .tag-bracket__corner--tr { top: 0; right: 0; }
+    .tag-bracket__corner--tr::before { width: 0.5rem; height: 1px; top: 0; right: 0; }
+    .tag-bracket__corner--tr::after { width: 1px; height: 0.5rem; top: 0; right: 0; }
+    .tag-bracket__corner--bl { bottom: 0; left: 0; }
+    .tag-bracket__corner--bl::before { width: 0.5rem; height: 1px; bottom: 0; left: 0; }
+    .tag-bracket__corner--bl::after { width: 1px; height: 0.5rem; bottom: 0; left: 0; }
+    .tag-bracket__corner--br { bottom: 0; right: 0; }
+    .tag-bracket__corner--br::before { width: 0.5rem; height: 1px; bottom: 0; right: 0; }
+    .tag-bracket__corner--br::after { width: 1px; height: 0.5rem; bottom: 0; right: 0; }
+    .tag-bracket__content { display: block; white-space: nowrap; padding: 0.25rem 0.4rem 0.2rem; font-size: 0.6875rem; font-weight: 500; text-transform: uppercase; letter-spacing: 0.1em; }
+    .tag-bracket__content--dark { background-color: rgba(0, 0, 0, 0.1); }
+    .tag-bracket--accent .tag-bracket__corner::before, .tag-bracket--accent .tag-bracket__corner::after { background-color: var(--accent); }
+    .tag-bracket--success .tag-bracket__content { background-color: rgba(16, 185, 129, 0.1); color: #34d399; }
+    .tag-bracket--success .tag-bracket__corner::before, .tag-bracket--success .tag-bracket__corner::after { background-color: #10b981; }
+
+    /* ═══════════════════════════════════════════════════════════════════════════
+       13. FRAME DECORATIONS
+       ═══════════════════════════════════════════════════════════════════════════ */
+
+    .frame-border { position: relative; display: flex; justify-content: center; align-items: center; width: 100%; padding: 2rem 0; }
+    .frame-border__line { position: absolute; background-color: #d3d3d3; height: 1px; left: 5%; right: 5%; }
+    .frame-border__line--top { top: 0; }
+    .frame-border__line--bottom { bottom: 0; }
+    .frame-border--dark .frame-border__line { background-color: rgba(255,255,255,0.15); }
+    .frame-border--accent .frame-border__line { background-color: var(--accent); }
+    .frame-border--gradient .frame-border__line { background: linear-gradient(90deg, transparent 0%, #d3d3d3 20%, #d3d3d3 80%, transparent 100%); }
+
+    /* ═══════════════════════════════════════════════════════════════════════════
+       14. ANIMATIONS
+       ═══════════════════════════════════════════════════════════════════════════ */
+
+    @keyframes slide-up-fade { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes scale-in { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+    @keyframes wipe-in { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+
+    .anim-demo { padding: 1rem 2rem; background: var(--surface-2); border: 1px solid var(--border); opacity: 0; }
+    .anim-demo.is-playing { animation-fill-mode: forwards; }
+    .anim-demo--slide.is-playing { animation: slide-up-fade 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+    .anim-demo--scale.is-playing { animation: scale-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+    .anim-demo--wipe.is-playing { animation: wipe-in 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards; opacity: 1; }
+
+    /* ═══════════════════════════════════════════════════════════════════════════
+       15. NAV LINK BACK
+       ═══════════════════════════════════════════════════════════════════════════ */
+
+    .nav-back { position: fixed; top: 1rem; right: 1rem; z-index: 100; }
+    .nav-back a { color: var(--accent); text-decoration: none; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; }
+    .nav-back a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="nav-back">
+    <a href="/">← Back to App</a>
+  </div>
+
+  <h1>AIComPet UI-Kit</h1>
+  <p class="subtitle">Ledger-inspired design system for professional competency assessment</p>
+
+  <!-- COLOR PALETTE -->
+  <section class="section">
+    <h2>1. Color Palette</h2>
+
+    <h3>Core Colors</h3>
+    <div class="color-grid">
+      <div class="color-swatch" style="background: #000000;"><span class="color-name">Black</span><span class="color-value">#000000</span></div>
+      <div class="color-swatch" style="background: #0d0d0d;"><span class="color-name">Surface 1</span><span class="color-value">#0d0d0d</span></div>
+      <div class="color-swatch" style="background: #171717;"><span class="color-name">Surface 2</span><span class="color-value">#171717</span></div>
+      <div class="color-swatch" style="background: #1f1f1f;"><span class="color-name">Surface 3</span><span class="color-value">#1f1f1f</span></div>
+      <div class="color-swatch" style="background: #ffffff; color: #000;"><span class="color-name">White</span><span class="color-value">#ffffff</span></div>
+    </div>
+
+    <h3 style="margin-top: 1.5rem;">Accent Colors</h3>
+    <div class="color-grid">
+      <div class="color-swatch" style="background: #fb923c;"><span class="color-name">Accent 400</span><span class="color-value">#fb923c</span></div>
+      <div class="color-swatch" style="background: #f97316;"><span class="color-name">Accent 500</span><span class="color-value">#f97316</span></div>
+      <div class="color-swatch" style="background: #ea580c;"><span class="color-name">Accent 600</span><span class="color-value">#ea580c</span></div>
+    </div>
+
+    <h3 style="margin-top: 1.5rem;">Semantic Colors</h3>
+    <div class="color-grid">
+      <div class="color-swatch" style="background: #10b981;"><span class="color-name">Success</span><span class="color-value">#10b981</span></div>
+      <div class="color-swatch" style="background: #f59e0b;"><span class="color-name">Warning</span><span class="color-value">#f59e0b</span></div>
+      <div class="color-swatch" style="background: #ef4444;"><span class="color-name">Danger</span><span class="color-value">#ef4444</span></div>
+      <div class="color-swatch" style="background: #3b82f6;"><span class="color-name">Info</span><span class="color-value">#3b82f6</span></div>
+    </div>
+  </section>
+
+  <!-- TYPOGRAPHY -->
+  <section class="section">
+    <h2>2. Typography</h2>
+    <div class="type-sample"><div class="type-label">Heading XL - 40px / Bold</div><div class="type-heading-xl type-mono">COMPETENCY ASSESSMENT</div></div>
+    <div class="type-sample"><div class="type-label">Heading LG - 28px / Semibold</div><div class="type-heading-lg type-mono">Session Report</div></div>
+    <div class="type-sample"><div class="type-label">Heading MD - 20px / Semibold</div><div class="type-heading-md type-mono">Cybersecurity Expert</div></div>
+    <div class="type-sample"><div class="type-label">Body - 14px / Regular</div><div class="type-body type-mono">AI-powered competency assessment system for evaluating professional skills.</div></div>
+    <div class="type-sample"><div class="type-label">Caption - 12px / Regular</div><div class="type-caption type-mono">Last updated: December 2025</div></div>
+  </section>
+
+  <!-- CARDS -->
+  <section class="section">
+    <h2>3. Card Components</h2>
+    <div class="grid">
+      <div class="card-hud">
+        <span class="dot-corner tl"></span><span class="dot-corner tr"></span><span class="dot-corner bl"></span><span class="dot-corner br"></span>
+        <div class="card-label">Basic Card</div>
+        <div class="card-title">Default HUD Card</div>
+        <div class="card-description">Standard card with dot corners. Used for general content containers.</div>
+      </div>
+      <div class="card-hud accent-border">
+        <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
+        <div class="card-label">Accent Card</div>
+        <div class="card-title">Corner Accent Card</div>
+        <div class="card-description">Card with accent-colored corner decorations. Used for highlighted content.</div>
+      </div>
+      <div class="card-hud glass">
+        <span class="bracket tl"></span><span class="bracket tr"></span><span class="bracket bl"></span><span class="bracket br"></span>
+        <div class="card-label">Glass Effect</div>
+        <div class="card-title">Frosted Glass Card</div>
+        <div class="card-description">Card with backdrop blur and bracket corners. Used for overlays.</div>
+      </div>
+      <div class="card-hud elevated accent-glow">
+        <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
+        <div class="card-label">Featured</div>
+        <div class="card-title">Elevated Glow Card</div>
+        <div class="card-description">Card with elevation shadow and accent glow. Used for primary actions.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- BUTTONS -->
+  <section class="section">
+    <h2>4. Button Components</h2>
+    <div class="flex-row" style="margin-bottom: 1.5rem;">
+      <button class="btn-clipped">Default</button>
+      <button class="btn-clipped primary">Primary</button>
+      <button class="btn-clipped inverted">Inverted</button>
+      <button class="btn-clipped ghost">Ghost</button>
+    </div>
+    <div class="flex-row" style="margin-bottom: 1.5rem;">
+      <button class="btn-clipped small">Small</button>
+      <button class="btn-clipped">Medium</button>
+      <button class="btn-clipped large">Large</button>
+    </div>
+    <div style="max-width: 300px;">
+      <button class="btn-clipped primary full-width">Full Width Button</button>
+    </div>
+  </section>
+
+  <!-- 3D BUTTONS -->
+  <section class="section">
+    <h2>5. 3D Button Effects</h2>
+    <p class="subtitle">Buttons with text flip animation on hover</p>
+    <div class="flex-row">
+      <button class="btn-3d btn-3d--clipped">
+        <span class="btn-3d__text-wrapper">
+          <span class="btn-3d__text btn-3d__text--front">Default</span>
+          <span class="btn-3d__text btn-3d__text--back">Hover!</span>
+        </span>
+      </button>
+      <button class="btn-3d btn-3d--clipped btn-3d--primary">
+        <span class="btn-3d__text-wrapper">
+          <span class="btn-3d__text btn-3d__text--front">Primary</span>
+          <span class="btn-3d__text btn-3d__text--back">Click</span>
+        </span>
+      </button>
+      <button class="btn-3d btn-3d--clipped btn-3d--invert">
+        <span class="btn-3d__text-wrapper">
+          <span class="btn-3d__text btn-3d__text--front">Inverted</span>
+          <span class="btn-3d__text btn-3d__text--back">Action</span>
+        </span>
+      </button>
+    </div>
+  </section>
+
+  <!-- HUD PANELS -->
+  <section class="section">
+    <h2>6. HUD Panels</h2>
+    <div class="grid">
+      <div class="hud-panel">
+        <span class="dot-corner tl"></span><span class="dot-corner tr"></span><span class="dot-corner bl"></span><span class="dot-corner br"></span>
+        <div class="hud-panel-header">
+          <span class="hud-panel-title">System Status</span>
+          <span class="hud-panel-status">Online</span>
+        </div>
+        <div class="hud-panel-content">All systems operational. Assessment engine ready.</div>
+      </div>
+      <div class="hud-panel compact">
+        <span class="dot-corner tl"></span><span class="dot-corner tr"></span><span class="dot-corner bl"></span><span class="dot-corner br"></span>
+        <div class="hud-panel-title" style="margin-bottom: 0.5rem;">Session Info</div>
+        <div class="hud-panel-content">User: expert_001 | Level: L2</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- STAT CARDS -->
+  <section class="section">
+    <h2>7. Stat Cards</h2>
+    <div class="flex-row">
+      <div class="stat-card" style="min-width: 140px;">
+        <span class="dot-corner tl"></span><span class="dot-corner tr"></span><span class="dot-corner bl"></span><span class="dot-corner br"></span>
+        <div class="stat-label">Questions</div>
+        <div class="stat-value">24<span class="stat-unit">/30</span></div>
+      </div>
+      <div class="stat-card" style="min-width: 140px;">
+        <span class="dot-corner tl"></span><span class="dot-corner tr"></span><span class="dot-corner bl"></span><span class="dot-corner br"></span>
+        <div class="stat-label">Score</div>
+        <div class="stat-value accent">87<span class="stat-unit">%</span></div>
+      </div>
+      <div class="stat-card" style="min-width: 140px;">
+        <span class="dot-corner tl"></span><span class="dot-corner tr"></span><span class="dot-corner bl"></span><span class="dot-corner br"></span>
+        <div class="stat-label">Level</div>
+        <div class="stat-value">L3</div>
+        <div class="stat-change positive">+1 from L2</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FORM ELEMENTS -->
+  <section class="section">
+    <h2>8. Form Elements</h2>
+    <div class="grid">
+      <div class="input-field">
+        <label class="input-label">Username</label>
+        <input type="text" class="input-control" placeholder="Enter username...">
+      </div>
+      <div class="input-field">
+        <label class="input-label">Competency Area</label>
+        <input type="text" class="input-control" placeholder="e.g., Cryptography">
+      </div>
+    </div>
+  </section>
+
+  <!-- BADGES -->
+  <section class="section">
+    <h2>9. Badges</h2>
+    <div class="flex-row">
+      <span class="badge">Default</span>
+      <span class="badge success">Completed</span>
+      <span class="badge warning">In Progress</span>
+      <span class="badge danger">Failed</span>
+      <span class="badge accent">Featured</span>
+    </div>
+  </section>
+
+  <!-- TAG BRACKETS -->
+  <section class="section">
+    <h2>10. Tag Brackets</h2>
+    <div class="flex-row">
+      <div class="tag-bracket">
+        <span class="tag-bracket__corner tag-bracket__corner--tl"></span>
+        <span class="tag-bracket__corner tag-bracket__corner--tr"></span>
+        <span class="tag-bracket__corner tag-bracket__corner--bl"></span>
+        <span class="tag-bracket__corner tag-bracket__corner--br"></span>
+        <span class="tag-bracket__content tag-bracket__content--dark">Default Tag</span>
+      </div>
+      <div class="tag-bracket tag-bracket--accent">
+        <span class="tag-bracket__corner tag-bracket__corner--tl"></span>
+        <span class="tag-bracket__corner tag-bracket__corner--tr"></span>
+        <span class="tag-bracket__corner tag-bracket__corner--bl"></span>
+        <span class="tag-bracket__corner tag-bracket__corner--br"></span>
+        <span class="tag-bracket__content tag-bracket__content--dark">Accent</span>
+      </div>
+      <div class="tag-bracket tag-bracket--success">
+        <span class="tag-bracket__corner tag-bracket__corner--tl"></span>
+        <span class="tag-bracket__corner tag-bracket__corner--tr"></span>
+        <span class="tag-bracket__corner tag-bracket__corner--bl"></span>
+        <span class="tag-bracket__corner tag-bracket__corner--br"></span>
+        <span class="tag-bracket__content">Completed</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- PROGRESS BARS -->
+  <section class="section">
+    <h2>11. Progress Bars</h2>
+    <div style="max-width: 400px;">
+      <div class="stat-label" style="margin-bottom: 0.5rem;">Thin (4px)</div>
+      <div class="progress-bar" style="margin-bottom: 1.5rem;">
+        <div class="progress-fill" style="width: 65%;"></div>
+      </div>
+      <div class="stat-label" style="margin-bottom: 0.5rem;">Thick (8px)</div>
+      <div class="progress-bar thick">
+        <div class="progress-fill" style="width: 85%;"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FRAME DECORATIONS -->
+  <section class="section">
+    <h2>12. Frame Decorations</h2>
+    <div class="grid" style="gap: 2rem;">
+      <div class="frame-border frame-border--dark">
+        <div class="frame-border__line frame-border__line--top"></div>
+        <div class="frame-border__line frame-border__line--bottom"></div>
+        <span style="color: var(--text-secondary);">Dark Frame Lines</span>
+      </div>
+      <div class="frame-border frame-border--accent">
+        <div class="frame-border__line frame-border__line--top"></div>
+        <div class="frame-border__line frame-border__line--bottom"></div>
+        <span style="color: var(--accent);">Accent Frame Lines</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ANIMATIONS -->
+  <section class="section">
+    <h2>13. Intro Animations</h2>
+    <div class="flex-row" style="gap: 2rem; margin-bottom: 1.5rem;">
+      <div class="anim-demo anim-demo--slide is-playing">Slide Up</div>
+      <div class="anim-demo anim-demo--scale is-playing" style="animation-delay: 0.2s;">Scale In</div>
+      <div class="anim-demo anim-demo--wipe is-playing" style="animation-delay: 0.4s;">Wipe Reveal</div>
+    </div>
+    <button class="btn-clipped" onclick="replayAnimations()">Replay Animations</button>
+    <script>
+      function replayAnimations() {
+        document.querySelectorAll('.anim-demo').forEach(el => {
+          el.classList.remove('is-playing');
+          void el.offsetWidth;
+          el.classList.add('is-playing');
+        });
+      }
+    </script>
+  </section>
+
+  <!-- LIGHT THEME -->
+  <section class="section theme-light" style="background: #fff; padding: 2rem; margin: 0 -2rem;">
+    <h2 style="color: #000; border-color: #eaeaea;">14. Light Theme</h2>
+    <p class="subtitle" style="color: #666;">Components adapted for light backgrounds</p>
+
+    <div class="grid" style="margin-bottom: 2rem;">
+      <div class="card-hud">
+        <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
+        <div class="card-label">Light Theme</div>
+        <div class="card-title">Default Card</div>
+        <div class="card-description">Standard card adapted for light backgrounds.</div>
+      </div>
+      <div class="card-hud accent-border">
+        <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
+        <div class="card-label">Accent Border</div>
+        <div class="card-title">Orange Border Card</div>
+        <div class="card-description">Card with accent-colored border.</div>
+      </div>
+    </div>
+
+    <div class="flex-row" style="margin-bottom: 2rem;">
+      <button class="btn-clipped" style="border-color: #d3d3d3;">Default</button>
+      <button class="btn-clipped primary">Primary</button>
+    </div>
+
+    <div class="flex-row">
+      <span class="badge" style="background: #f5f5f5; border-color: #eaeaea; color: #666;">Default</span>
+      <span class="badge success">Completed</span>
+      <span class="badge warning">In Progress</span>
+      <span class="badge accent">Featured</span>
+    </div>
+  </section>
+</body>
+</html>
