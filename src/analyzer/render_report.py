@@ -1559,16 +1559,22 @@ function setMetricOverlay(metricId) {{
   const overlayData = GRAPH_DATA.metric_overlays[metricId];
 
   if (overlayData) {{
-    // Color nodes by overlay values
+    // Normalize overlay values to [0, 1] for color and size
+    const vals = Object.values(overlayData);
+    const oMin = Math.min(...vals);
+    const oMax = Math.max(...vals);
+    const oRange = oMax - oMin || 1;
+    function normalize(v) {{ return (v - oMin) / oRange; }}
+
     nodes.transition(t)
       .attr('fill', d => {{
         const v = overlayData[d.id];
-        return v !== undefined ? riskColor(v) : '#333';
+        return v !== undefined ? riskColor(normalize(v)) : '#333';
       }})
       .attr('r', d => {{
         if (!isNodeVisible(d)) return 1;
         const v = overlayData[d.id];
-        return v !== undefined ? 3 + v * 9 : 2;
+        return v !== undefined ? 3 + normalize(v) * 9 : 2;
       }})
       .attr('opacity', d => {{
         if (!isNodeVisible(d)) return 0.03;
@@ -1609,7 +1615,12 @@ function updateOverlayInfo(metricId) {{
   const overlayData = GRAPH_DATA.metric_overlays[metricId];
   const nodeCount = overlayData ? Object.keys(overlayData).length : 0;
   const valStr = m.value !== null ? (m.value * 100).toFixed(1) + '%' : 'N/A';
-  infoEl.textContent = m.title + ' = ' + valStr + (nodeCount ? ' (' + nodeCount + ' узлов)' : '');
+  infoEl.textContent = m.title + ' = ' + valStr + (nodeCount ? ' (' + nodeCount + ' узлов)' : ' (системная)');
+  if (m.value !== null) {{
+    infoEl.style.color = m.value < 0.3 ? 'var(--success)' : m.value < 0.7 ? '#fbbf24' : 'var(--danger)';
+  }} else {{
+    infoEl.style.color = 'var(--text-tertiary)';
+  }}
 }}
 
 // =========================================================================
