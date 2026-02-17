@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -56,11 +57,14 @@ def _load_combined(path: Path) -> dict[str, Any]:
         return json.load(fh)
 
 
+_TEST_CLASS_RE = re.compile(r"(^Test[A-Z]|Tests?$)")
+
+
 def _is_test_node(method_id: str) -> bool:
     """Определяет, является ли метод тестовым по имени класса.
 
-    Тестовые классы содержат ``Test`` или ``Tests`` в имени класса
-    (часть идентификатора до символа ``#``).
+    Распознаёт стандартные соглашения именования Java-тестов:
+    суффиксы ``Test``/``Tests`` и префикс ``Test`` перед заглавной буквой.
 
     Args:
         method_id: Полный идентификатор метода вида ``pkg.ClassName#method()``.
@@ -72,7 +76,7 @@ def _is_test_node(method_id: str) -> bool:
         return False
     class_part = method_id.split("#")[0]
     class_name = class_part.rsplit(".", 1)[-1] if "." in class_part else class_part
-    return "Test" in class_name or "Tests" in class_name
+    return bool(_TEST_CLASS_RE.search(class_name))
 
 
 def _make_label(method_id: str) -> str:
@@ -214,6 +218,8 @@ def _render_html(graph_data: dict[str, Any]) -> str:
         Строка с полным HTML-документом.
     """
     data_json = json.dumps(graph_data, ensure_ascii=False, indent=2)
+    # Предотвращение выхода из контекста <script> через последовательность </
+    data_json = data_json.replace("</", "<\\/")
     meta = graph_data["meta"]
     summary = graph_data["summary"]
     score_pct = round(summary["aggregate_score"] * 100, 1)
@@ -776,8 +782,7 @@ const simulation = d3.forceSimulation(GRAPH_DATA.nodes)
   .force('collision', d3.forceCollide().radius(d => NODE_STYLE[d.type].r + 1))
   .alphaDecay(0.03);
 
-// Defs for pulsating rings
-const defs = svg.append('defs');
+svg.append('defs');
 
 // Draw edges
 const linkG = g.append('g').attr('class', 'links');
@@ -1061,14 +1066,18 @@ function getNodeRadius(d) {{
 }}
 
 // =========================================================================
-//  Resize handler
+//  Resize handler (с дебаунсингом)
 // =========================================================================
+let _resizeTimer;
 window.addEventListener('resize', () => {{
-  const w = svg.node().parentElement.clientWidth;
-  const h = svg.node().parentElement.clientHeight;
-  svg.attr('viewBox', [0, 0, w, h]);
-  simulation.force('center', d3.forceCenter(w / 2, h / 2));
-  simulation.alpha(0.1).restart();
+  clearTimeout(_resizeTimer);
+  _resizeTimer = setTimeout(() => {{
+    const w = svg.node().parentElement.clientWidth;
+    const h = svg.node().parentElement.clientHeight;
+    svg.attr('viewBox', [0, 0, w, h]);
+    simulation.force('center', d3.forceCenter(w / 2, h / 2));
+    simulation.alpha(0.1).restart();
+  }}, 150);
 }});
 </script>
 </body>
@@ -1084,15 +1093,10 @@ def _escape_html(text: str) -> str:
         text: Исходная строка.
 
     Returns:
-        Строка с заменёнными ``&``, ``<``, ``>``, ``"``.
+        Строка с заменёнными ``&``, ``<``, ``>``, ``"`` и ``'``.
     """
-    return (
-        text
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
-    )
+    import html as _html_mod
+    return _html_mod.escape(text, quote=True)
 
 
 def main(argv: list[str] | None = None) -> int:
