@@ -137,6 +137,34 @@ def _classify_nodes(
     return result
 
 
+_METRIC_META: dict[str, dict[str, str]] = {
+    "A1": {"name": "ASE", "title": "Открытость поверхности атаки", "group": "A", "score_key": "ASE"},
+    "A2": {"name": "ECI", "title": "Индекс взрывной сложности", "group": "A", "score_key": "ECI_avg"},
+    "A3": {"name": "IET", "title": "Входная энтропия", "group": "A", "score_key": "IET_system"},
+    "B1": {"name": "IDS", "title": "Глубина эшелонированной защиты", "group": "B", "score_key": "IDS"},
+    "B2": {"name": "PPI", "title": "Индекс близости к привилегиям", "group": "B", "score_key": "PPI"},
+    "B3": {"name": "MPSP", "title": "Паритет защиты по путям", "group": "B", "score_key": "MPSP"},
+    "B4": {"name": "FSS", "title": "Оценка безопасного отказа", "group": "B", "score_key": "FSS"},
+    "C1": {"name": "TPC", "title": "Сложность пути заражённых данных", "group": "C", "score_key": "TPC"},
+    "C2": {"name": "ETI", "title": "Индекс прозрачности ошибок", "group": "C", "score_key": "ETI"},
+    "C3": {"name": "SFA", "title": "Анализ потоков секретов", "group": "C", "score_key": "SFA"},
+    "D1": {"name": "PAD", "title": "Дрейф атак на стыках технологий", "group": "D", "score_key": "PAD"},
+    "D2": {"name": "TCPD", "title": "Глубина цепочки доверия", "group": "D", "score_key": "TCPD"},
+    "E1": {"name": "OSDR", "title": "Риск зависимостей с открытым кодом", "group": "E", "score_key": "OSDR"},
+    "F1": {"name": "VFCP", "title": "Предиктор сложности исправления", "group": "F", "score_key": "VFCP"},
+    "F2": {"name": "SRP", "title": "Вероятность регрессии безопасности", "group": "F", "score_key": "SRP"},
+}
+
+_GROUP_NAMES: dict[str, str] = {
+    "A": "Поверхность атаки",
+    "B": "Глубина защиты",
+    "C": "Потоки данных",
+    "D": "Технологические границы",
+    "E": "Зависимости",
+    "F": "Изменяемость",
+}
+
+
 def _build_graph_data(data: dict[str, Any]) -> dict[str, Any]:
     """Формирование структуры GRAPH_DATA для встраивания в HTML.
 
@@ -184,6 +212,65 @@ def _build_graph_data(data: dict[str, Any]) -> dict[str, Any]:
                 "score": sample.get("score", 0.0),
             }
 
+    # Все метрики: нормализованные значения из _METRIC_META
+    all_metrics: dict[str, Any] = {}
+    for mid, meta_info in _METRIC_META.items():
+        block = metrics.get(mid, {})
+        score_key = meta_info["score_key"]
+        value = block.get(score_key)
+        all_metrics[mid] = {
+            "id": mid,
+            "name": meta_info["name"],
+            "title": meta_info["title"],
+            "group": meta_info["group"],
+            "status": block.get("status", "not_available"),
+            "value": round(value, 4) if value is not None else None,
+        }
+
+    # Оверлеи: данные по узлам для метрик A1, A2, A3
+    metric_overlays: dict[str, dict[str, float]] = {}
+
+    # A1: score per entrypoint
+    a1_overlay: dict[str, float] = {}
+    for sample in a1.get("sample", []):
+        mid_s = sample.get("method", "")
+        if mid_s and sample.get("score") is not None:
+            a1_overlay[mid_s] = sample["score"]
+    if a1_overlay:
+        metric_overlays["A1"] = a1_overlay
+
+    # A2: ECI per method
+    a2 = metrics.get("A2", {})
+    a2_overlay: dict[str, float] = {}
+    for entry in a2.get("top", []):
+        mid_e = entry.get("method", "")
+        if mid_e and entry.get("ECI") is not None:
+            a2_overlay[mid_e] = entry["ECI"]
+    if a2_overlay:
+        metric_overlays["A2"] = a2_overlay
+
+    # A3: entropy per entrypoint
+    a3 = metrics.get("A3", {})
+    a3_overlay: dict[str, float] = {}
+    for sample in a3.get("sample", []):
+        mid_s = sample.get("method", "")
+        if mid_s and sample.get("entropy") is not None:
+            a3_overlay[mid_s] = sample["entropy"]
+    if a3_overlay:
+        metric_overlays["A3"] = a3_overlay
+
+    # Радар: средние значения по группам метрик
+    group_values: dict[str, list[float]] = {}
+    for mid, info in all_metrics.items():
+        if info["value"] is not None and info["status"] == "ok":
+            group_values.setdefault(info["group"], []).append(info["value"])
+
+    radar_data: list[dict[str, Any]] = []
+    for gid in ("A", "B", "C", "D", "E", "F"):
+        vals = group_values.get(gid, [])
+        avg = round(sum(vals) / len(vals), 4) if vals else None
+        radar_data.append({"group": gid, "label": _GROUP_NAMES[gid], "value": avg})
+
     repo_url = meta.get("repo_url", "")
     repo_name = repo_url.rstrip("/").rsplit("/", 1)[-1] if repo_url else "unknown"
 
@@ -205,6 +292,13 @@ def _build_graph_data(data: dict[str, Any]) -> dict[str, Any]:
         "nodes": nodes,
         "edges": edges,
         "entrypoint_details": entrypoint_details,
+        "all_metrics": all_metrics,
+        "metric_overlays": metric_overlays,
+        "radar": radar_data,
+        "aggregate": {
+            "score": round(aggregate.get("score", 0.0), 4),
+            "components": aggregate.get("components", {}),
+        },
     }
 
 
@@ -1140,6 +1234,9 @@ def main(argv: list[str] | None = None) -> int:
           f"regular={node_counts.get('regular', 0)})")
     print(f"  Связей: {len(graph_data['edges'])}")
     print(f"  Размер файла: {output_path.stat().st_size:,} байт")
+    available = sum(1 for m in graph_data["all_metrics"].values() if m["status"] == "ok")
+    total = len(graph_data["all_metrics"])
+    print(f"  Метрик: {available}/{total} доступно")
     return 0
 
 
