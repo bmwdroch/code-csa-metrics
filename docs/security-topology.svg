@@ -1,0 +1,347 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 750" font-family="'Segoe UI', 'Helvetica Neue', sans-serif">
+  <defs>
+    <!-- Background gradient -->
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0a0e1a"/>
+      <stop offset="100%" stop-color="#111827"/>
+    </linearGradient>
+    <!-- Entry node glow -->
+    <filter id="glowRed" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feFlood flood-color="#ef4444" flood-opacity="0.4"/>
+      <feComposite in2="blur" operator="in"/>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <!-- Service node glow -->
+    <filter id="glowAmber" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feFlood flood-color="#f59e0b" flood-opacity="0.35"/>
+      <feComposite in2="blur" operator="in"/>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <!-- Sink node glow -->
+    <filter id="glowCyan" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feFlood flood-color="#06b6d4" flood-opacity="0.35"/>
+      <feComposite in2="blur" operator="in"/>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <!-- Shield glow -->
+    <filter id="glowGreen" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feFlood flood-color="#22c55e" flood-opacity="0.5"/>
+      <feComposite in2="blur" operator="in"/>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <!-- Danger path -->
+    <linearGradient id="dangerPath" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ef4444"/>
+      <stop offset="100%" stop-color="#dc2626" stop-opacity="0.6"/>
+    </linearGradient>
+    <!-- Safe path -->
+    <linearGradient id="safePath" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#22c55e"/>
+      <stop offset="100%" stop-color="#16a34a" stop-opacity="0.6"/>
+    </linearGradient>
+    <!-- Warn path -->
+    <linearGradient id="warnPath" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#f59e0b"/>
+      <stop offset="100%" stop-color="#d97706" stop-opacity="0.6"/>
+    </linearGradient>
+    <!-- Arrow markers -->
+    <marker id="arrowRed" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto-start-reverse">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#ef4444"/>
+    </marker>
+    <marker id="arrowGreen" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto-start-reverse">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#22c55e"/>
+    </marker>
+    <marker id="arrowAmber" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto-start-reverse">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#f59e0b"/>
+    </marker>
+    <marker id="arrowGray" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto-start-reverse">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#475569"/>
+    </marker>
+    <!-- Grid pattern -->
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5" opacity="0.4"/>
+    </pattern>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1100" height="750" fill="url(#bg)"/>
+  <rect width="1100" height="750" fill="url(#grid)"/>
+
+  <!-- Title -->
+  <text x="550" y="42" text-anchor="middle" fill="#e2e8f0" font-size="20" font-weight="700" letter-spacing="1">ГРАФ ТОПОЛОГИИ БЕЗОПАСНОСТИ</text>
+  <line x1="350" y1="75" x2="750" y2="75" stroke="#334155" stroke-width="1"/>
+
+  <!-- ═══════════════════════════════════════ -->
+  <!-- EDGES (drawn first, behind nodes) -->
+  <!-- ═══════════════════════════════════════ -->
+
+  <!-- REST API → AuthController (safe - has shields) -->
+  <path d="M 175 170 Q 260 160, 340 210" fill="none" stroke="#22c55e" stroke-width="2" stroke-dasharray="6,3" marker-end="url(#arrowGreen)" opacity="0.8"/>
+  
+  <!-- REST API → UserService (danger - no auth) -->
+  <path d="M 175 190 Q 300 280, 420 340" fill="none" stroke="#ef4444" stroke-width="2.5" marker-end="url(#arrowRed)" opacity="0.9"/>
+  
+  <!-- Kafka → OrderProcessor -->
+  <path d="M 175 370 Q 260 350, 340 340" fill="none" stroke="#f59e0b" stroke-width="2" stroke-dasharray="6,3" marker-end="url(#arrowAmber)" opacity="0.8"/>
+
+  <!-- gRPC → PaymentGateway -->
+  <path d="M 175 540 Q 300 530, 420 490" fill="none" stroke="#22c55e" stroke-width="2" stroke-dasharray="6,3" marker-end="url(#arrowGreen)" opacity="0.8"/>
+
+  <!-- AuthController → UserService -->
+  <path d="M 440 230 Q 450 280, 445 310" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrowGray)" opacity="0.7"/>
+
+  <!-- UserService → DB -->
+  <path d="M 520 350 Q 650 330, 750 270" fill="none" stroke="#ef4444" stroke-width="2.5" marker-end="url(#arrowRed)" opacity="0.9"/>
+
+  <!-- OrderProcessor → UserService -->
+  <path d="M 400 370 Q 420 365, 420 355" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrowGray)" opacity="0.5"/>
+
+  <!-- OrderProcessor → ExternalAPI -->
+  <path d="M 520 370 Q 650 400, 750 420" fill="none" stroke="#f59e0b" stroke-width="2" marker-end="url(#arrowAmber)" opacity="0.8"/>
+
+  <!-- PaymentGateway → DB -->
+  <path d="M 520 490 Q 660 430, 750 290" fill="none" stroke="#22c55e" stroke-width="2" stroke-dasharray="6,3" marker-end="url(#arrowGreen)" opacity="0.8"/>
+
+  <!-- PaymentGateway → FileSystem -->
+  <path d="M 520 510 Q 650 550, 750 560" fill="none" stroke="#22c55e" stroke-width="2" stroke-dasharray="6,3" marker-end="url(#arrowGreen)" opacity="0.8"/>
+
+  <!-- AuthController → ExternalAPI -->
+  <path d="M 440 210 Q 600 180, 750 400" fill="none" stroke="#475569" stroke-width="1.5" stroke-dasharray="4,4" marker-end="url(#arrowGray)" opacity="0.5"/>
+
+  <!-- ═══════════════════════════════════════ -->
+  <!-- LAYER LABELS -->
+  <!-- ═══════════════════════════════════════ -->
+  
+  <!-- Entry layer label -->
+  <rect x="30" y="92" width="130" height="26" rx="4" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+  <text x="95" y="110" text-anchor="middle" fill="#94a3b8" font-size="10" font-weight="600" letter-spacing="1.5">ТОЧКИ ВХОДА</text>
+
+  <!-- Logic layer label -->
+  <rect x="345" y="92" width="180" height="26" rx="4" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+  <text x="435" y="110" text-anchor="middle" fill="#94a3b8" font-size="10" font-weight="600" letter-spacing="1.5">БИЗНЕС-ЛОГИКА</text>
+
+  <!-- Sink layer label -->
+  <rect x="730" y="92" width="130" height="26" rx="4" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+  <text x="795" y="110" text-anchor="middle" fill="#94a3b8" font-size="10" font-weight="600" letter-spacing="1.5">ПРИЁМНИКИ</text>
+
+  <!-- Metrics panel label -->
+  <rect x="910" y="92" width="160" height="26" rx="4" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+  <text x="990" y="110" text-anchor="middle" fill="#94a3b8" font-size="10" font-weight="600" letter-spacing="1.5">МЕТРИКИ УЗЛОВ</text>
+
+  <!-- ═══════════════════════════════════════ -->
+  <!-- ENTRY POINT NODES -->
+  <!-- ═══════════════════════════════════════ -->
+
+  <!-- REST API -->
+  <g filter="url(#glowRed)">
+    <rect x="55" y="150" width="120" height="60" rx="8" fill="#1c1017" stroke="#ef4444" stroke-width="1.5"/>
+    <text x="115" y="174" text-anchor="middle" fill="#fca5a5" font-size="10" font-weight="700" letter-spacing="1">REST API</text>
+    <text x="115" y="194" text-anchor="middle" fill="#ef4444" font-size="9" opacity="0.8">public · no auth</text>
+  </g>
+
+  <!-- Kafka -->
+  <g filter="url(#glowAmber)">
+    <rect x="55" y="340" width="120" height="60" rx="8" fill="#1c1710" stroke="#f59e0b" stroke-width="1.5"/>
+    <text x="115" y="364" text-anchor="middle" fill="#fcd34d" font-size="10" font-weight="700" letter-spacing="1">KAFKA</text>
+    <text x="115" y="384" text-anchor="middle" fill="#f59e0b" font-size="9" opacity="0.8">internal · partial</text>
+  </g>
+
+  <!-- gRPC -->
+  <g filter="url(#glowGreen)">
+    <rect x="55" y="520" width="120" height="60" rx="8" fill="#0f1c14" stroke="#22c55e" stroke-width="1.5"/>
+    <text x="115" y="544" text-anchor="middle" fill="#86efac" font-size="10" font-weight="700" letter-spacing="1">gRPC</text>
+    <text x="115" y="564" text-anchor="middle" fill="#22c55e" font-size="9" opacity="0.8">mTLS · secured</text>
+  </g>
+
+  <!-- ═══════════════════════════════════════ -->
+  <!-- BUSINESS LOGIC NODES -->
+  <!-- ═══════════════════════════════════════ -->
+
+  <!-- AuthController -->
+  <g filter="url(#glowGreen)">
+    <rect x="340" y="180" width="180" height="70" rx="10" fill="#0f1c14" stroke="#22c55e" stroke-width="1.5"/>
+    <text x="430" y="204" text-anchor="middle" fill="#86efac" font-size="11" font-weight="700">AuthController</text>
+    <line x1="360" y1="214" x2="500" y2="214" stroke="#22c55e" stroke-width="0.5" opacity="0.3"/>
+    <text x="430" y="230" text-anchor="middle" fill="#4ade80" font-size="9">@PreAuthorize · @Valid</text>
+    <text x="430" y="244" text-anchor="middle" fill="#22c55e" font-size="8" opacity="0.7">ECI: 2.1 · IET: 0.2</text>
+  </g>
+
+  <!-- UserService -->
+  <g filter="url(#glowRed)">
+    <rect x="340" y="310" width="180" height="70" rx="10" fill="#1c1017" stroke="#ef4444" stroke-width="2"/>
+    <text x="430" y="334" text-anchor="middle" fill="#fca5a5" font-size="11" font-weight="700">UserService</text>
+    <line x1="360" y1="344" x2="500" y2="344" stroke="#ef4444" stroke-width="0.5" opacity="0.3"/>
+    <text x="430" y="360" text-anchor="middle" fill="#f87171" font-size="9">Map&lt;String,Object&gt; input</text>
+    <text x="430" y="374" text-anchor="middle" fill="#ef4444" font-size="8" opacity="0.7">ECI: 14.3 · IET: 0.9</text>
+  </g>
+
+  <!-- PaymentGateway -->
+  <g filter="url(#glowGreen)">
+    <rect x="340" y="460" width="180" height="70" rx="10" fill="#0f1c14" stroke="#22c55e" stroke-width="1.5"/>
+    <text x="430" y="484" text-anchor="middle" fill="#86efac" font-size="11" font-weight="700">PaymentGateway</text>
+    <line x1="360" y1="494" x2="500" y2="494" stroke="#22c55e" stroke-width="0.5" opacity="0.3"/>
+    <text x="430" y="510" text-anchor="middle" fill="#4ade80" font-size="9">@Secured · encrypt</text>
+    <text x="430" y="524" text-anchor="middle" fill="#22c55e" font-size="8" opacity="0.7">ECI: 4.0 · IET: 0.15</text>
+  </g>
+
+  <!-- ═══════════════════════════════════════ -->
+  <!-- SHIELD ICONS on safe edges -->
+  <!-- ═══════════════════════════════════════ -->
+  
+  <!-- Shield on REST→Auth path -->
+  <g transform="translate(248, 158)">
+    <circle cx="0" cy="0" r="10" fill="#0f1c14" stroke="#22c55e" stroke-width="1"/>
+    <text x="0" y="4" text-anchor="middle" fill="#22c55e" font-size="10">🛡</text>
+  </g>
+
+  <!-- Shield on gRPC→Payment path -->
+  <g transform="translate(295, 518)">
+    <circle cx="0" cy="0" r="10" fill="#0f1c14" stroke="#22c55e" stroke-width="1"/>
+    <text x="0" y="4" text-anchor="middle" fill="#22c55e" font-size="10">🛡</text>
+  </g>
+
+  <!-- ⚠ on danger path REST→UserService -->
+  <g transform="translate(278, 258)">
+    <circle cx="0" cy="0" r="11" fill="#1c1017" stroke="#ef4444" stroke-width="1.5"/>
+    <text x="0" y="5" text-anchor="middle" fill="#ef4444" font-size="13" font-weight="700">!</text>
+  </g>
+  <text x="278" y="282" text-anchor="middle" fill="#ef4444" font-size="8" font-weight="600">NO AUTH</text>
+
+  <!-- ═══════════════════════════════════════ -->
+  <!-- SINK NODES -->
+  <!-- ═══════════════════════════════════════ -->
+
+  <!-- Database -->
+  <g filter="url(#glowCyan)">
+    <rect x="730" y="230" width="130" height="70" rx="10" fill="#0c1821" stroke="#06b6d4" stroke-width="1.5"/>
+    <text x="795" y="257" text-anchor="middle" fill="#67e8f9" font-size="11" font-weight="700">PostgreSQL</text>
+    <line x1="750" y1="267" x2="840" y2="267" stroke="#06b6d4" stroke-width="0.5" opacity="0.3"/>
+    <text x="795" y="283" text-anchor="middle" fill="#22d3ee" font-size="9">ПДн · финансы</text>
+    <text x="795" y="295" text-anchor="middle" fill="#06b6d4" font-size="8" opacity="0.7">PPI: 0.5 · CRITICAL</text>
+  </g>
+
+  <!-- External API -->
+  <g filter="url(#glowAmber)">
+    <rect x="730" y="380" width="130" height="70" rx="10" fill="#1c1710" stroke="#f59e0b" stroke-width="1.5"/>
+    <text x="795" y="407" text-anchor="middle" fill="#fcd34d" font-size="11" font-weight="700">External API</text>
+    <line x1="750" y1="417" x2="840" y2="417" stroke="#f59e0b" stroke-width="0.5" opacity="0.3"/>
+    <text x="795" y="433" text-anchor="middle" fill="#fbbf24" font-size="9">TCPD: 3 hops</text>
+    <text x="795" y="445" text-anchor="middle" fill="#f59e0b" font-size="8" opacity="0.7">SFA: 0.2 · MEDIUM</text>
+  </g>
+
+  <!-- File System -->
+  <g filter="url(#glowCyan)">
+    <rect x="730" y="530" width="130" height="70" rx="10" fill="#0c1821" stroke="#06b6d4" stroke-width="1.5"/>
+    <text x="795" y="557" text-anchor="middle" fill="#67e8f9" font-size="11" font-weight="700">File System</text>
+    <line x1="750" y1="567" x2="840" y2="567" stroke="#06b6d4" stroke-width="0.5" opacity="0.3"/>
+    <text x="795" y="583" text-anchor="middle" fill="#22d3ee" font-size="9">логи · аудит</text>
+    <text x="795" y="595" text-anchor="middle" fill="#06b6d4" font-size="8" opacity="0.7">ETI: 0.05 · LOW</text>
+  </g>
+
+  <!-- ═══════════════════════════════════════ -->
+  <!-- METRICS PANEL (right side) -->
+  <!-- ═══════════════════════════════════════ -->
+
+  <rect x="900" y="130" width="180" height="490" rx="8" fill="#0f172a" stroke="#1e293b" stroke-width="1.5"/>
+  
+  <!-- Path metrics -->
+  <text x="990" y="158" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="700">Метрики путей</text>
+  <line x1="920" y1="168" x2="1060" y2="168" stroke="#334155" stroke-width="0.5"/>
+
+  <!-- Critical path -->
+  <rect x="916" y="180" width="148" height="55" rx="5" fill="#1c1017" stroke="#ef4444" stroke-width="1" opacity="0.9"/>
+  <text x="990" y="198" text-anchor="middle" fill="#fca5a5" font-size="9" font-weight="600">КРИТИЧЕСКИЙ ПУТЬ</text>
+  <text x="990" y="213" text-anchor="middle" fill="#ef4444" font-size="8">REST → UserService → DB</text>
+  <text x="990" y="228" text-anchor="middle" fill="#f87171" font-size="8">IDS: 0.17 (1/6 слоёв)</text>
+
+  <!-- MPSP -->
+  <rect x="916" y="245" width="148" height="45" rx="5" fill="#1c1710" stroke="#f59e0b" stroke-width="1" opacity="0.9"/>
+  <text x="990" y="263" text-anchor="middle" fill="#fcd34d" font-size="9" font-weight="600">MPSP UserService</text>
+  <text x="990" y="278" text-anchor="middle" fill="#f59e0b" font-size="8">Паритет: 0.33 ⚠ разрыв</text>
+
+  <!-- FSS -->
+  <rect x="916" y="300" width="148" height="45" rx="5" fill="#0f1c14" stroke="#22c55e" stroke-width="1" opacity="0.9"/>
+  <text x="990" y="318" text-anchor="middle" fill="#86efac" font-size="9" font-weight="600">FSS система</text>
+  <text x="990" y="333" text-anchor="middle" fill="#22c55e" font-size="8">Fail-closed: 87% ✓</text>
+
+  <!-- Aggregate -->
+  <text x="990" y="365" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="700">Агрегаты</text>
+  <line x1="920" y1="375" x2="1060" y2="375" stroke="#334155" stroke-width="0.5"/>
+
+  <g>
+    <text x="920" y="398" fill="#94a3b8" font-size="9">ASE системы</text>
+    <text x="1060" y="398" text-anchor="end" fill="#ef4444" font-size="9" font-weight="600">34.7</text>
+  </g>
+  <g>
+    <text x="920" y="418" fill="#94a3b8" font-size="9">IDS min path</text>
+    <text x="1060" y="418" text-anchor="end" fill="#ef4444" font-size="9" font-weight="600">0.17</text>
+  </g>
+  <g>
+    <text x="920" y="438" fill="#94a3b8" font-size="9">TPC avg depth</text>
+    <text x="1060" y="438" text-anchor="end" fill="#f59e0b" font-size="9" font-weight="600">3.2</text>
+  </g>
+  <g>
+    <text x="920" y="458" fill="#94a3b8" font-size="9">SRP coverage</text>
+    <text x="1060" y="458" text-anchor="end" fill="#22c55e" font-size="9" font-weight="600">0.78</text>
+  </g>
+  <g>
+    <text x="920" y="478" fill="#94a3b8" font-size="9">ETI leak ratio</text>
+    <text x="1060" y="478" text-anchor="end" fill="#22c55e" font-size="9" font-weight="600">0.05</text>
+  </g>
+  <g>
+    <text x="920" y="498" fill="#94a3b8" font-size="9">SFA exposure</text>
+    <text x="1060" y="498" text-anchor="end" fill="#f59e0b" font-size="9" font-weight="600">0.20</text>
+  </g>
+  <g>
+    <text x="920" y="518" fill="#94a3b8" font-size="9">VFCP predict</text>
+    <text x="1060" y="518" text-anchor="end" fill="#f59e0b" font-size="9" font-weight="600">6.4d</text>
+  </g>
+
+  <!-- Overall score -->
+  <line x1="920" y1="535" x2="1060" y2="535" stroke="#334155" stroke-width="0.5"/>
+  <rect x="916" y="545" width="148" height="60" rx="6" fill="#1c1017" stroke="#ef4444" stroke-width="1.5"/>
+  <text x="990" y="567" text-anchor="middle" fill="#94a3b8" font-size="9" font-weight="600" letter-spacing="1">RISK SCORE</text>
+  <text x="990" y="595" text-anchor="middle" fill="#ef4444" font-size="24" font-weight="700">C+</text>
+
+  <!-- ═══════════════════════════════════════ -->
+  <!-- LEGEND -->
+  <!-- ═══════════════════════════════════════ -->
+
+  <rect x="30" y="650" width="840" height="75" rx="6" fill="#0f172a" stroke="#1e293b" stroke-width="1"/>
+  
+  <text x="50" y="672" fill="#94a3b8" font-size="9" font-weight="700" letter-spacing="1">ЛЕГЕНДА</text>
+  
+  <!-- Entry -->
+  <rect x="50" y="685" width="12" height="12" rx="2" fill="none" stroke="#ef4444" stroke-width="1.5"/>
+  <text x="68" y="695" fill="#94a3b8" font-size="9">Точка входа</text>
+
+  <!-- Logic -->
+  <rect x="160" y="685" width="12" height="12" rx="2" fill="none" stroke="#22c55e" stroke-width="1.5"/>
+  <text x="178" y="695" fill="#94a3b8" font-size="9">Защищённый узел</text>
+
+  <!-- Danger -->
+  <rect x="300" y="685" width="12" height="12" rx="2" fill="#1c1017" stroke="#ef4444" stroke-width="2"/>
+  <text x="318" y="695" fill="#94a3b8" font-size="9">Уязвимый узел</text>
+
+  <!-- Sink -->
+  <rect x="435" y="685" width="12" height="12" rx="2" fill="none" stroke="#06b6d4" stroke-width="1.5"/>
+  <text x="453" y="695" fill="#94a3b8" font-size="9">Приёмник (sink)</text>
+
+  <!-- Safe path -->
+  <line x1="560" y1="691" x2="590" y2="691" stroke="#22c55e" stroke-width="2" stroke-dasharray="6,3"/>
+  <text x="598" y="695" fill="#94a3b8" font-size="9">Защищённый путь</text>
+
+  <!-- Danger path -->
+  <line x1="720" y1="691" x2="750" y2="691" stroke="#ef4444" stroke-width="2.5"/>
+  <text x="758" y="695" fill="#94a3b8" font-size="9">Путь без защиты</text>
+
+  <!-- Vertical dashed separators between layers -->
+  <line x1="250" y1="125" x2="250" y2="635" stroke="#1e293b" stroke-width="1" stroke-dasharray="8,6" opacity="0.6"/>
+  <line x1="650" y1="125" x2="650" y2="635" stroke="#1e293b" stroke-width="1" stroke-dasharray="8,6" opacity="0.6"/>
+  <line x1="885" y1="125" x2="885" y2="635" stroke="#1e293b" stroke-width="1" stroke-dasharray="8,6" opacity="0.6"/>
+
+</svg>
