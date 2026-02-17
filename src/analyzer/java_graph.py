@@ -37,7 +37,7 @@ SECRET_WORDS_PAT = re.compile(r"\b(password|passwd|token|secret|apiKey|apikey|cr
 LOG_PAT = re.compile(r"\b(log\.info|log\.debug|log\.warn|log\.error|logger\.)")
 SERIALIZE_PAT = re.compile(r"\b(objectMapper\.writeValueAsString|toJson|serialize)\b")
 
-ETI_LEAK_PAT = re.compile(r"(getMessage\\(\\)|printStackTrace\\(\\))")
+ETI_LEAK_PAT = re.compile(r"(getMessage\(\)|printStackTrace\(\))")
 
 
 @dataclass(frozen=True)
@@ -116,12 +116,13 @@ def _extract_annotations(src: bytes, node) -> set[str]:
 
 
 def _extract_param_types(src: bytes, method_node) -> list[str]:
+    """Извлекает текстовые представления типов параметров метода."""
     types = []
     params = _first_child(method_node, "formal_parameters")
     if not params:
         return types
     for param in _find_children(params, "formal_parameter"):
-        tnode = _first_child(param, "type")
+        tnode = param.child_by_field_name("type")
         if tnode:
             types.append(_node_text(src, tnode).strip())
     return types
@@ -668,7 +669,6 @@ def build_java_graph(repo_dir: Path, *, max_files: int | None) -> JavaGraph:
                         entropy_level=entropy,
                     )
                 )
-
             # flags
             body = _first_child(m, "block")
             body_text = _node_text(src, body) if body else ""

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import time
@@ -78,7 +79,172 @@ def compute_all_metrics(
         else:
             out[metric_id] = {"status": "unknown_metric_id"}
 
+    _normalize_metrics(out)
+    _compute_aggregate(out)
     return out
+
+
+# ---------------------------------------------------------------------------
+# Нормализация: приведение всех метрик к [0, 1], где 0 = безопасно, 1 = критично.
+# ---------------------------------------------------------------------------
+
+_ASE_CAP = 1000
+_ECI_CAP = 30.0
+_TPC_CAP = 10.0
+_PAD_CAP = 4.0
+_TCPD_CAP = 10.0
+
+
+def _normalize_metrics(out: dict) -> None:
+    """Нормализует неограниченные метрики и инвертирует метрики с обратной семантикой.
+
+    Изменяет ``out`` на месте. Исходные значения сохраняются в ``raw_*`` полях.
+    """
+    # --- A1 (ASE): логарифмическая шкала ---
+    a1 = out.get("A1")
+    if a1 and a1.get("status") == "ok" and a1.get("ASE") is not None:
+        raw = a1["ASE"]
+        a1["raw_ASE"] = raw
+        a1["ASE"] = min(1.0, math.log2(1 + max(0, raw)) / math.log2(1 + _ASE_CAP))
+
+    # --- A2 (ECI): среднее по top-N с линейным cap ---
+    a2 = out.get("A2")
+    if a2 and a2.get("status") == "ok" and a2.get("top") is not None:
+        eci_values = [entry["ECI"] for entry in a2["top"]]
+        raw_max = max(eci_values) if eci_values else 0.0
+        avg_eci = sum(eci_values) / len(eci_values) if eci_values else 0.0
+        a2["raw_ECI_max"] = raw_max
+        a2["ECI_avg"] = min(1.0, avg_eci / _ECI_CAP)
+
+    # --- B1 (IDS): инверсия (больше слоёв = безопаснее → 1 - v) ---
+    b1 = out.get("B1")
+    if b1 and b1.get("status") == "ok" and b1.get("IDS_system") is not None:
+        raw = b1["IDS_system"]
+        b1["raw_IDS"] = raw
+        b1["IDS"] = 1.0 - raw
+
+    # --- B3 (MPSP): инверсия ---
+    b3 = out.get("B3")
+    if b3 and b3.get("status") == "ok" and b3.get("MPSP_system") is not None:
+        raw = b3["MPSP_system"]
+        b3["raw_MPSP"] = raw
+        b3["MPSP"] = 1.0 - raw
+
+    # --- B4 (FSS): инверсия ---
+    b4 = out.get("B4")
+    if b4 and b4.get("status") == "ok" and b4.get("FSS") is not None:
+        raw = b4["FSS"]
+        b4["raw_FSS"] = raw
+        b4["FSS"] = 1.0 - raw
+
+    # --- C1 (TPC): линейный cap ---
+    c1 = out.get("C1")
+    if c1 and c1.get("status") == "ok" and c1.get("TPC_max_consecutive_unsafe_hops") is not None:
+        raw = c1["TPC_max_consecutive_unsafe_hops"]
+        c1["raw_TPC"] = raw
+        c1["TPC"] = min(1.0, raw / _TPC_CAP)
+
+    # --- D1 (PAD): линейный cap ---
+    d1 = out.get("D1")
+    if d1 and d1.get("status") == "ok" and d1.get("PAD") is not None:
+        raw = d1["PAD"]
+        d1["raw_PAD"] = raw
+        d1["PAD"] = min(1.0, raw / _PAD_CAP)
+
+    # --- D2 (TCPD): линейный cap ---
+    d2 = out.get("D2")
+    if d2 and d2.get("status") == "ok" and d2.get("TCPD_max_hops_after_last_auth") is not None:
+        raw = d2["TCPD_max_hops_after_last_auth"]
+        d2["raw_TCPD"] = raw
+        d2["TCPD"] = min(1.0, raw / _TCPD_CAP)
+
+
+# ---------------------------------------------------------------------------
+# Агрегированный скор
+# ---------------------------------------------------------------------------
+
+# Веса по группам: отражают относительную важность для общей безопасности.
+_METRIC_WEIGHTS: dict[str, float] = {
+    "A1": 0.08,
+    "A2": 0.07,
+    "A3": 0.07,
+    "B1": 0.10,
+    "B2": 0.10,
+    "B3": 0.05,
+    "B4": 0.05,
+    "C1": 0.08,
+    "C2": 0.06,
+    "C3": 0.08,
+    "D1": 0.04,
+    "D2": 0.06,
+    "E1": 0.06,
+    "F1": 0.05,
+    "F2": 0.05,
+}
+
+# Маппинг: metric_id → ключ с нормализованным [0,1] значением внутри словаря метрики.
+_METRIC_SCORE_KEY: dict[str, str] = {
+    "A1": "ASE",
+    "A2": "ECI_avg",
+    "A3": "IET_system",
+    "B1": "IDS",
+    "B2": "PPI",
+    "B3": "MPSP",
+    "B4": "FSS",
+    "C1": "TPC",
+    "C2": "ETI",
+    "C3": "SFA",
+    "D1": "PAD",
+    "D2": "TCPD",
+    "E1": "OSDR",
+    "F1": "VFCP",
+    "F2": "SRP",
+}
+
+
+def _compute_aggregate(out: dict) -> None:
+    """Вычисляет взвешенный агрегированный скор по всем доступным метрикам.
+
+    Результат помещается в ``out["aggregate"]``.
+    """
+    components: dict[str, float] = {}
+    notes: list[str] = []
+    weight_sum = 0.0
+    weighted_sum = 0.0
+
+    for metric_id, weight in _METRIC_WEIGHTS.items():
+        block = out.get(metric_id)
+        if not block or block.get("status") != "ok":
+            continue
+        key = _METRIC_SCORE_KEY.get(metric_id)
+        if not key:
+            continue
+        value = block.get(key)
+        if value is None:
+            continue
+        components[metric_id] = value
+        weight_sum += weight
+        weighted_sum += weight * value
+
+    if weight_sum > 0:
+        score = weighted_sum / weight_sum
+    else:
+        score = None
+        notes.append("No metrics available for aggregation.")
+
+    excluded = [
+        mid for mid in _METRIC_WEIGHTS
+        if mid not in components
+    ]
+    if excluded:
+        notes.append(f"Excluded (unavailable): {', '.join(excluded)}.")
+
+    out["aggregate"] = {
+        "score": score,
+        "components": components,
+        "available": len(components),
+        "notes": notes,
+    }
 
 
 def _na(graph: JavaGraph | None, reason: str) -> dict:

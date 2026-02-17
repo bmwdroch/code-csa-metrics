@@ -20,18 +20,24 @@ class CmdResult:
     duration_sec: float
 
 
-def run_cmd(cmd: list[str], *, cwd: Path | None = None, env: dict[str, str] | None = None) -> CmdResult:
+def run_cmd(cmd: list[str], *, cwd: Path | None = None, env: dict[str, str] | None = None,
+            timeout: float | None = None) -> CmdResult:
     start = time.perf_counter()
-    proc = subprocess.run(
-        cmd,
-        cwd=str(cwd) if cwd else None,
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
-    end = time.perf_counter()
-    return CmdResult(proc.returncode, proc.stdout, proc.stderr, end - start)
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=str(cwd) if cwd else None,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=timeout,
+        )
+        end = time.perf_counter()
+        return CmdResult(proc.returncode, proc.stdout, proc.stderr, end - start)
+    except subprocess.TimeoutExpired:
+        end = time.perf_counter()
+        return CmdResult(-1, "", "timeout", end - start)
 
 
 def ensure_dir(path: Path) -> None:
@@ -44,9 +50,6 @@ def write_json(path: Path, obj: object) -> None:
 
 
 def start_docker_stats_sampler(container_name: str, stats: dict) -> tuple[subprocess.Popen[str], threading.Thread]:
-    # Stream stats once per second. We keep the format easy to parse.
-    # Example line:
-    # 12.34%|15.2MiB / 1GiB|1.48%
     cmd = [
         "docker",
         "stats",
@@ -93,13 +96,11 @@ def start_docker_stats_sampler(container_name: str, stats: dict) -> tuple[subpro
 
 
 def parse_mem_usage(mem_usage_field: str) -> tuple[int | None, int | None]:
-    # Format: "<used> / <limit>", e.g. "15.2MiB / 1GiB"
     parts = [p.strip() for p in mem_usage_field.split("/", 1)]
     if len(parts) != 2:
         return None, None
 
     def parse_size(s: str) -> int | None:
-        # Docker prints like: 15.2MiB, 1GiB, 512kB, 0B
         s = s.strip()
         if not s:
             return None
@@ -113,7 +114,6 @@ def parse_mem_usage(mem_usage_field: str) -> tuple[int | None, int | None]:
             "GB": 1000 * 1000 * 1000,
             "GiB": 1024 * 1024 * 1024,
         }
-        # Split numeric and unit
         num = ""
         unit = ""
         for ch in s:
@@ -138,13 +138,14 @@ def main() -> int:
     parser.add_argument("--repo-url", default="https://github.com/langchain4j/langchain4j", help="Target Git repo URL")
     parser.add_argument("--ref", default="", help="Git ref (branch/tag/commit). Empty = default branch HEAD")
     parser.add_argument("--mode", choices=["fast", "full"], default="full", help="Analyzer mode")
-    parser.add_argument("--build-image", action="store_true", help="Build analyzer image before run")
-    parser.add_argument("--image-tag", default="csa-metrics-prototype:latest", help="Docker image tag")
+    parser.add_argument("--build-image", action="store_true", help="Build analyzer image(s) before run")
+    parser.add_argument("--image-tag", default="", help="Docker image tag override (auto-selected by mode if empty)")
     parser.add_argument("--out-dir", default="out/latest", help="Output directory (relative to repo root)")
     parser.add_argument("--deps-max-modules", type=int, default=8, help="Max Maven modules to analyze for deps (full mode)")
     parser.add_argument("--cpu", default="", help="Docker --cpus value, e.g. 2.0")
     parser.add_argument("--memory", default="", help="Docker --memory value, e.g. 2g")
     parser.add_argument("--m2-cache-dir", default="", help="Host dir to mount as /root/.m2 (speeds up Maven in full mode)")
+    parser.add_argument("--timeout", type=int, default=0, help="Container timeout in seconds (0 = no limit)")
     args = parser.parse_args()
 
     repo_root = Path(__file__).resolve().parents[1]
@@ -153,6 +154,12 @@ def main() -> int:
         shutil.rmtree(out_dir)
     ensure_dir(out_dir)
 
+    # Выбор образа по режиму: fast-образ без JVM, full-образ с JRE.
+    if args.image_tag:
+        image_tag = args.image_tag
+    else:
+        image_tag = f"csa-metrics:{args.mode}"
+
     orchestrator = {
         "meta": {
             "repo_root": str(repo_root),
@@ -160,7 +167,7 @@ def main() -> int:
             "target_repo_url": args.repo_url,
             "target_ref": args.ref,
             "mode": args.mode,
-            "image_tag": args.image_tag,
+            "image_tag": image_tag,
         },
         "timings": {},
         "docker": {},
@@ -174,11 +181,16 @@ def main() -> int:
     }
 
     if args.build_image:
-        dockerfile = repo_root / "prototype" / "docker" / "Dockerfile"
-        t = run_cmd(
-            ["docker", "build", "-f", str(dockerfile), "-t", args.image_tag, str(repo_root)],
-            cwd=repo_root,
-        )
+        dockerfile = repo_root / "src" / "docker" / "Dockerfile"
+        # Собираем целевой образ (fast или full) через --target.
+        build_cmd = [
+            "docker", "build",
+            "-f", str(dockerfile),
+            "--target", args.mode,
+            "-t", image_tag,
+            str(repo_root),
+        ]
+        t = run_cmd(build_cmd, cwd=repo_root)
         orchestrator["timings"]["docker_build_sec"] = t.duration_sec
         if t.returncode != 0:
             orchestrator["errors"].append({"step": "docker_build", "stderr": t.stderr[-4000:], "stdout": t.stdout[-4000:]})
@@ -202,7 +214,7 @@ def main() -> int:
     docker_run_cmd += [
         "-v",
         f"{out_dir}:/out",
-        args.image_tag,
+        image_tag,
         "--repo-url",
         args.repo_url,
         "--out",
@@ -228,10 +240,20 @@ def main() -> int:
 
     stats_proc, stats_thread = start_docker_stats_sampler(container_name, orchestrator["stats"])
 
-    # Wait for container completion
-    wait_res = run_cmd(["docker", "wait", container_name])
+    # Ожидание завершения контейнера с опциональным таймаутом.
+    timed_out = False
+    if args.timeout > 0:
+        wait_res = run_cmd(["docker", "wait", container_name], timeout=args.timeout)
+        if wait_res.returncode == -1 and wait_res.stderr == "timeout":
+            timed_out = True
+            run_cmd(["docker", "stop", "-t", "5", container_name])
+            wait_res = run_cmd(["docker", "wait", container_name])
+    else:
+        wait_res = run_cmd(["docker", "wait", container_name])
+
     orchestrator["timings"]["docker_wait_sec"] = wait_res.duration_sec
     orchestrator["docker"]["exit_code"] = wait_res.stdout.strip()
+    orchestrator["docker"]["timed_out"] = timed_out
     orchestrator["timings"]["docker_run_total_wall_sec"] = time.perf_counter() - t_run
 
     # Stop stats sampler (docker stats keeps streaming even after container exit).
@@ -269,6 +291,15 @@ def main() -> int:
         for err in orchestrator["errors"]:
             print(f"- {err.get('step')}: {err.get('error') or 'see orchestrator.json'}")
         return 3
+
+    if timed_out:
+        print(f"Container timed out after {args.timeout}s, see {out_dir}/container.log")
+        return 5
+
+    container_exit = orchestrator["docker"].get("exit_code", "0").strip()
+    if container_exit != "0":
+        print(f"Container exited with code {container_exit}, see {out_dir}/container.log")
+        return 4
 
     return 0
 
