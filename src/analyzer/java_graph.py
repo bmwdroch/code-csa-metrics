@@ -603,7 +603,15 @@ class JavaGraph:
                     break
             if len(edges_l) >= limit_edges:
                 break
-        return {"nodes": nodes_l, "edges": edges_l}
+        ep_ids = [ep.method_id for ep in self.entrypoints if ep.method_id in node_set]
+        sink_ids = [s.method_id for s in self.sinks if s.method_id in node_set]
+
+        return {
+            "nodes": nodes_l,
+            "edges": edges_l,
+            "entrypoint_ids": ep_ids,
+            "sink_ids": sink_ids,
+        }
 
 
 def build_java_graph(repo_dir: Path, *, max_files: int | None) -> JavaGraph:
