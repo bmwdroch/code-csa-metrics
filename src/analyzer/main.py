@@ -47,6 +47,11 @@ def git_clone(repo_url: str, ref: str, dest: Path, depth: int) -> dict:
     if ref:
         r = run_cmd(["git", "checkout", "--force", ref], cwd=dest)
         if r.returncode != 0:
+            # Shallow clone may not contain an arbitrary commit SHA/tag; try fetching the ref explicitly.
+            fetch = run_cmd(["git", "fetch", "--no-tags", "--depth", str(depth), "origin", ref], cwd=dest)
+            if fetch.returncode == 0:
+                r = run_cmd(["git", "checkout", "--force", ref], cwd=dest)
+        if r.returncode != 0:
             raise RuntimeError(f"git checkout {ref} failed: {r.stderr.strip()}")
 
     head = run_cmd(["git", "rev-parse", "HEAD"], cwd=dest)

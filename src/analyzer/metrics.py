@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -71,7 +72,7 @@ def compute_all_metrics(
         elif metric_id == "E1":
             out["E1"] = metric_E1_OSDR(repo_dir, mode=mode)
         elif metric_id == "F1":
-            out["F1"] = metric_F1_VFCP(graph, mode=mode)
+            out["F1"] = metric_F1_VFCP(repo_dir, graph, mode=mode)
         elif metric_id == "F2":
             out["F2"] = metric_F2_SRP(repo_dir, graph)
         elif metric_id == "M1":
@@ -485,25 +486,280 @@ def metric_E1_OSDR(repo_dir: Path, *, mode: str) -> dict:
     return res
 
 
-def metric_F1_VFCP(graph: JavaGraph | None, *, mode: str) -> dict:
+_JAVA_IDENT_RE = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\b")
+_JAVA_DUP_STR_LIT_RE = re.compile(r"\"(?:\\\\.|[^\"\\\\])*\"")
+_JAVA_DUP_CHAR_LIT_RE = re.compile(r"'(?:\\\\.|[^'\\\\])+'")
+_JAVA_DUP_BLOCK_COMMENT_RE = re.compile(r"/\\*.*?\\*/", re.DOTALL)
+_JAVA_DUP_LINE_COMMENT_RE = re.compile(r"//.*?$", re.MULTILINE)
+_JAVA_DUP_HEX_RE = re.compile(r"\b0x[0-9A-Fa-f]+\b")
+_JAVA_DUP_NUM_RE = re.compile(r"\b\d+(?:\.\d+)?\b")
+_JAVA_DUP_TOK_RE = re.compile(
+    r"[A-Za-z_][A-Za-z0-9_]*|==|!=|<=|>=|&&|\\|\\||<<|>>>|>>|[-+*/%&|^!~?:=<>.,;(){}\\[\\]]"
+)
+_JAVA_KEYWORDS = {
+    # Java keywords + common literals
+    "abstract",
+    "assert",
+    "boolean",
+    "break",
+    "byte",
+    "case",
+    "catch",
+    "char",
+    "class",
+    "const",
+    "continue",
+    "default",
+    "do",
+    "double",
+    "else",
+    "enum",
+    "extends",
+    "final",
+    "finally",
+    "float",
+    "for",
+    "goto",
+    "if",
+    "implements",
+    "import",
+    "instanceof",
+    "int",
+    "interface",
+    "long",
+    "native",
+    "new",
+    "package",
+    "private",
+    "protected",
+    "public",
+    "return",
+    "short",
+    "static",
+    "strictfp",
+    "super",
+    "switch",
+    "synchronized",
+    "this",
+    "throw",
+    "throws",
+    "transient",
+    "try",
+    "void",
+    "volatile",
+    "while",
+    # newer/common
+    "record",
+    "sealed",
+    "permits",
+    "var",
+    # literals
+    "true",
+    "false",
+    "null",
+}
+
+
+def _is_test_path(path: Path) -> bool:
+    parts = [p.lower() for p in path.parts]
+    if "src" in parts and "test" in parts:
+        return True
+    if "test" in parts or "tests" in parts:
+        return True
+    return False
+
+
+def _estimate_test_coverage(repo_dir: Path, graph: JavaGraph) -> tuple[float, dict]:
+    """Static heuristic: class is considered 'covered' if its simple name appears in test source identifiers."""
+    # Collect production classes from graph (exclude test files when the graph provides the flag).
+    prod_classes_simple: set[str] = set()
+    prod_classes_fqn: set[str] = set()
+    for mid, flags in graph.method_flags.items():
+        if flags.get("is_test"):
+            continue
+        cls_fqn = mid.split("#", 1)[0]
+        if not cls_fqn:
+            continue
+        prod_classes_fqn.add(cls_fqn)
+        prod_classes_simple.add(cls_fqn.split(".")[-1])
+
+    test_files = []
+    for root, dirs, files in os.walk(repo_dir):
+        dirs[:] = [d for d in dirs if d not in {".git", "target", "build", ".gradle", ".idea"}]
+        if not _is_test_path(Path(root)):
+            continue
+        for fn in files:
+            if fn.endswith(".java"):
+                test_files.append(Path(root) / fn)
+
+    identifiers: set[str] = set()
+    max_identifiers = 2_000_000
+    bytes_scanned = 0
+    max_bytes = 50_000_000  # 50 MB across tests
+    for p in test_files:
+        if bytes_scanned >= max_bytes:
+            break
+        try:
+            raw = p.read_bytes()
+        except OSError:
+            continue
+        bytes_scanned += len(raw)
+        text = raw.decode("utf-8", errors="ignore")
+        for ident in _JAVA_IDENT_RE.findall(text):
+            identifiers.add(ident)
+            if len(identifiers) >= max_identifiers:
+                break
+        if len(identifiers) >= max_identifiers:
+            break
+
+    covered = 0
+    for simple in prod_classes_simple:
+        if simple in identifiers:
+            covered += 1
+
+    total = len(prod_classes_simple)
+    estimate = (covered / total) if total else 0.0
+    meta = {
+        "heuristic": "class simple-name appears in test identifiers",
+        "prod_classes": total,
+        "covered_classes": covered,
+        "test_files_considered": len(test_files),
+        "bytes_scanned": bytes_scanned,
+        "identifiers_collected": len(identifiers),
+    }
+    return estimate, meta
+
+
+def _tokenize_java_for_dup(text: str) -> list[str]:
+    # Best-effort normalization for "logical" duplicates:
+    # - drop comments
+    # - replace literals with placeholders
+    # - normalize identifiers to "id" (except keywords)
+    if not text:
+        return []
+
+    if len(text) < 120:
+        return []
+
+    # Strip string/char literals first to avoid confusing comment stripping.
+    text = _JAVA_DUP_STR_LIT_RE.sub(" STR ", text)
+    text = _JAVA_DUP_CHAR_LIT_RE.sub(" CHR ", text)
+
+    # Strip comments (best-effort).
+    text = _JAVA_DUP_BLOCK_COMMENT_RE.sub(" ", text)
+    text = _JAVA_DUP_LINE_COMMENT_RE.sub(" ", text)
+
+    # Replace numbers (incl hex) with NUM.
+    text = _JAVA_DUP_HEX_RE.sub(" NUM ", text)
+    text = _JAVA_DUP_NUM_RE.sub(" NUM ", text)
+
+    # Tokenize. Keep operators/punct as tokens to retain structure.
+    raw_tokens = _JAVA_DUP_TOK_RE.findall(text)
+    tokens: list[str] = []
+    for t in raw_tokens:
+        if not t:
+            continue
+        if t in {"STR", "CHR", "NUM"}:
+            tokens.append(t)
+            continue
+        if t[0].isalpha() or t[0] == "_":
+            tokens.append(t if t in _JAVA_KEYWORDS else "id")
+        else:
+            tokens.append(t)
+    return tokens
+
+
+def _estimate_duplication_factor(graph: JavaGraph) -> tuple[float, dict]:
+    """Static heuristic: token-hash method bodies and compute duplicated-token ratio."""
+    min_tokens = 40  # ignore tiny methods/getters
+    total_tokens = 0
+    groups: dict[str, list[int]] = {}
+    methods_considered = 0
+
+    for mid, flags in graph.method_flags.items():
+        if flags.get("is_test"):
+            continue
+        body = flags.get("body_text") or ""
+        if not body:
+            continue
+        tokens = _tokenize_java_for_dup(body)
+        if len(tokens) < min_tokens:
+            continue
+        methods_considered += 1
+        tok_count = len(tokens)
+        total_tokens += tok_count
+
+        h = hashlib.sha1()
+        for t in tokens:
+            h.update(t.encode("utf-8", errors="ignore"))
+            h.update(b" ")
+        fp = h.hexdigest()
+        groups.setdefault(fp, []).append(tok_count)
+
+    duplicated_tokens = 0
+    duplicated_methods = 0
+    duplicate_groups = 0
+    for counts in groups.values():
+        if len(counts) <= 1:
+            continue
+        duplicate_groups += 1
+        duplicated_methods += len(counts) - 1
+        duplicated_tokens += sum(counts) - max(counts)  # keep one "original"
+
+    estimate = (duplicated_tokens / total_tokens) if total_tokens else 0.0
+    meta = {
+        "heuristic": "normalized token hash over method bodies; duplicated-token ratio",
+        "methods_considered": methods_considered,
+        "min_tokens": min_tokens,
+        "groups_total": len(groups),
+        "groups_duplicated": duplicate_groups,
+        "methods_duplicated": duplicated_methods,
+        "total_tokens": total_tokens,
+        "duplicated_tokens": duplicated_tokens,
+    }
+    return estimate, meta
+
+
+def _summary_excluding_tests(graph: JavaGraph) -> tuple[dict, dict, dict]:
+    prod_methods = [mid for mid, f in graph.method_flags.items() if not f.get("is_test")]
+    prod_set = set(prod_methods)
+
+    out_deg = []
+    for mid in prod_methods:
+        out_deg.append(sum(1 for dst in graph.edges.get(mid, ()) if dst in prod_set))
+    coupling = {"avg_out_degree": (sum(out_deg) / len(out_deg)) if out_deg else 0.0, "methods": len(out_deg)}
+
+    vals = [graph.method_complexity.get(mid, 0) for mid in prod_methods]
+    complexity = {"avg_cognitive": (sum(vals) / len(vals)) if vals else 0.0, "methods": len(vals)}
+
+    concrete = 0
+    total = 0
+    for mid in prod_methods:
+        ck = graph.method_flags.get(mid, {}).get("class_kind")
+        if ck:
+            total += 1
+            if ck == "concrete":
+                concrete += 1
+    abstraction = {"concrete_ratio": (concrete / total) if total else 1.0, "samples": total}
+    return coupling, complexity, abstraction
+
+
+def metric_F1_VFCP(repo_dir: Path, graph: JavaGraph | None, *, mode: str) -> dict:
     if not graph:
         return _na(graph, "no_java_graph")
-    # Composite predictor. Coverage/duplication are best-effort in this prototype.
-    # Coupling: efferent only (outgoing edges) normalized.
-    coupling = graph.coupling_summary()
-    complexity = graph.complexity_summary()
-    coverage = None
-    dup = None
-    abstraction = graph.abstraction_summary()
+    # Composite predictor. Coverage/duplication are static estimates in this prototype.
+    coupling, complexity, abstraction = _summary_excluding_tests(graph)
+    coverage, coverage_meta = _estimate_test_coverage(repo_dir, graph)
+    dup, dup_meta = _estimate_duplication_factor(graph)
 
     # Normalize into 0..1 with naive caps.
     norm_coupling = min(1.0, coupling["avg_out_degree"] / 20.0)
     norm_complexity = min(1.0, complexity["avg_cognitive"] / 30.0)
     norm_abstraction = 1.0 - min(1.0, abstraction["concrete_ratio"])
 
-    # Missing signals: treat as neutral (0.5) for now.
-    norm_coverage = 0.5
-    norm_dup = 0.5
+    # Coverage/duplication estimates are already 0..1.
+    norm_coverage = min(1.0, max(0.0, coverage))
+    norm_dup = min(1.0, max(0.0, dup))
 
     vfcp = (0.25 * norm_coupling) + (0.25 * norm_complexity) + (0.2 * (1 - norm_coverage)) + (0.15 * norm_dup) + (0.15 * norm_abstraction)
     return {
@@ -512,11 +768,13 @@ def metric_F1_VFCP(graph: JavaGraph | None, *, mode: str) -> dict:
         "signals": {
             "coupling": coupling,
             "complexity": complexity,
-            "test_coverage": coverage,
-            "duplicate_factor": dup,
+            "test_coverage": norm_coverage,
+            "test_coverage_meta": coverage_meta,
+            "duplicate_factor": norm_dup,
+            "duplicate_factor_meta": dup_meta,
             "abstraction": abstraction,
         },
-        "notes": ["Prototype normalization; coverage/duplicates are not computed yet (neutral default)."],
+        "notes": ["Static estimates: coverage via test identifier mentions; duplicates via normalized token hashing (tests excluded)."],
     }
 
 

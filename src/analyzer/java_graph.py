@@ -625,7 +625,16 @@ def build_java_graph(repo_dir: Path, *, max_files: int | None) -> JavaGraph:
     if max_files is not None:
         files = files[:max_files]
 
+    def is_test_file(path: Path) -> bool:
+        parts = [p.lower() for p in path.parts]
+        if "src" in parts and "test" in parts:
+            return True
+        if "test" in parts or "tests" in parts:
+            return True
+        return False
+
     for path in files:
+        is_test = is_test_file(path)
         src = path.read_bytes()
         tree = _JAVA_PARSER.parse(src)
         root = tree.root_node
@@ -681,6 +690,8 @@ def build_java_graph(repo_dir: Path, *, max_files: int | None) -> JavaGraph:
                 "audit": bool(AUDIT_PAT.search(body_text)),
                 "body_text": body_text[:20000],  # cap
                 "class_kind": "concrete" if class_kind == "concrete" else "abstract",
+                "is_test": is_test,
+                "rel_path": str(path.relative_to(repo_dir)),
             }
             method_flags[mid] = flags
 
