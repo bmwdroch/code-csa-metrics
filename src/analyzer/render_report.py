@@ -305,8 +305,12 @@ def _build_graph_data(data: dict[str, Any]) -> dict[str, Any]:
 def _render_html(graph_data: dict[str, Any]) -> str:
     """Генерация полного HTML-документа с встроенными CSS, JS и данными графа.
 
+    Создаёт самодостаточный HTML с двумя вкладками: дашборд (радар + карточки
+    метрик) и граф (D3 force-directed с оверлеями метрик). Все стили и скрипты
+    встроены. Тема оформления — HUD dark.
+
     Args:
-        graph_data: Структура GRAPH_DATA для визуализации.
+        graph_data: Структура GRAPH_DATA, сформированная ``_build_graph_data``.
 
     Returns:
         Строка с полным HTML-документом.
@@ -477,9 +481,9 @@ html, body {{
 }}
 
 /* ======================================================================
-   Toolbar (Filter Buttons)
+   Tab Navigation
    ====================================================================== */
-.toolbar {{
+.tab-nav {{
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -488,14 +492,123 @@ html, body {{
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }}
-.toolbar-label {{
-  font-size: 0.625rem;
+
+/* ======================================================================
+   Tab Content
+   ====================================================================== */
+.tab-content {{
+  display: none;
+  flex: 1;
+  min-height: 0;
+}}
+.tab-content.active[data-tab-type="dashboard"] {{
+  display: block;
+  overflow-y: auto;
+}}
+.tab-content.active[data-tab-type="graph"] {{
+  display: flex;
+  flex-direction: column;
+}}
+
+/* ======================================================================
+   Dashboard Content
+   ====================================================================== */
+.dashboard-content {{
+  padding: 1.5rem 2rem;
+  overflow-y: auto;
+  flex: 1;
+}}
+
+/* Radar */
+.radar-container {{
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 1rem 0 1.5rem;
+}}
+
+/* Metric Cards Grid */
+.metrics-grid {{
+  max-width: 960px;
+  margin: 0 auto;
+}}
+.metrics-group {{
+  margin-bottom: 1.5rem;
+}}
+.metrics-group-header {{
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--border);
+}}
+.metrics-group-row {{
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}}
+.metric-card {{
+  position: relative;
+  flex: 1 1 180px;
+  max-width: 220px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  padding: 0.75rem 0.875rem;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}}
+.metric-card:hover {{
+  border-color: var(--border-strong);
+  background: var(--surface-3);
+}}
+.metric-card.disabled {{
+  opacity: 0.35;
+  cursor: default;
+  pointer-events: none;
+}}
+.metric-card-id {{
+  font-size: 0.5625rem;
+  font-weight: 600;
   color: var(--text-tertiary);
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  margin-right: 0.5rem;
+  margin-bottom: 0.25rem;
+}}
+.metric-card-name {{
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 0.125rem;
+}}
+.metric-card-title {{
+  font-size: 0.625rem;
+  color: var(--text-tertiary);
+  margin-bottom: 0.5rem;
+  line-height: 1.3;
+}}
+.metric-card-value {{
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 0.35rem;
+}}
+.metric-progress {{
+  width: 100%;
+  height: 3px;
+  background: var(--surface-1);
+  overflow: hidden;
+}}
+.metric-progress-fill {{
+  height: 100%;
+  transition: width 0.3s ease;
 }}
 
+/* ======================================================================
+   Btn-clipped (shared)
+   ====================================================================== */
 .btn-clipped {{
   position: relative;
   display: inline-flex;
@@ -560,6 +673,53 @@ html, body {{
   --btn-border-color: var(--accent);
   --btn-fill: var(--accent);
   font-weight: 600;
+}}
+
+/* ======================================================================
+   Toolbar (Filter Buttons inside Graph tab)
+   ====================================================================== */
+.toolbar {{
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}}
+.toolbar-label {{
+  font-size: 0.625rem;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-right: 0.5rem;
+}}
+.toolbar-separator {{
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+  margin: 0 0.25rem;
+}}
+.metric-select {{
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 0.6875rem;
+  padding: 0.35rem 0.5rem;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}}
+.metric-select:hover, .metric-select:focus {{
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}}
+.overlay-info {{
+  font-size: 0.625rem;
+  color: var(--text-tertiary);
+  margin-left: 0.35rem;
 }}
 
 /* ======================================================================
@@ -788,33 +948,66 @@ html, body {{
     </div>
   </div>
 
-  <!-- Toolbar -->
-  <div class="toolbar">
-    <span class="toolbar-label">Фильтр:</span>
-    <button class="btn-clipped active" data-filter="all" onclick="setFilter('all')">Все</button>
-    <button class="btn-clipped" data-filter="entrypoints" onclick="setFilter('entrypoints')">Точки входа</button>
-    <button class="btn-clipped" data-filter="sinks" onclick="setFilter('sinks')">Стоки</button>
-    <button class="btn-clipped" data-filter="hide-tests" onclick="setFilter('hide-tests')">Скрыть тесты</button>
+  <!-- Tab Navigation -->
+  <div class="tab-nav">
+    <button class="btn-clipped active" data-tab="dashboard" onclick="switchTab('dashboard')">Дашборд</button>
+    <button class="btn-clipped" data-tab="graph" onclick="switchTab('graph')">Граф</button>
+  </div>
 
-    <div class="legend">
-      <div class="legend-item"><div class="legend-dot" style="background:#fb923c"></div>Точка входа</div>
-      <div class="legend-item"><div class="legend-dot" style="background:#f87171"></div>Сток</div>
-      <div class="legend-item"><div class="legend-dot" style="background:#6b6b6b"></div>Метод</div>
-      <div class="legend-item"><div class="legend-dot" style="background:#6b6b6b;opacity:0.3"></div>Тест</div>
+  <!-- ================================================================
+       Dashboard Tab
+       ================================================================ -->
+  <div id="tab-dashboard" class="tab-content active" data-tab-type="dashboard">
+    <div class="dashboard-content">
+      <div class="radar-container">
+        <svg id="radar-svg" width="300" height="300"></svg>
+      </div>
+      <div class="metrics-grid" id="metrics-cards"></div>
     </div>
   </div>
 
-  <!-- Graph Area -->
-  <div class="graph-wrapper">
-    <svg id="graph-svg"></svg>
-    <div class="tooltip" id="tooltip"></div>
+  <!-- ================================================================
+       Graph Tab
+       ================================================================ -->
+  <div id="tab-graph" class="tab-content" data-tab-type="graph">
 
-    <!-- Detail Panel -->
-    <div class="detail-panel" id="detail-panel">
-      <button class="detail-panel-close" onclick="closeDetail()">&times;</button>
-      <div class="detail-title">Информация об узле</div>
-      <div id="detail-content"></div>
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <span class="toolbar-label">Фильтр:</span>
+      <button class="btn-clipped active" data-filter="all" onclick="setFilter('all')">Все</button>
+      <button class="btn-clipped" data-filter="entrypoints" onclick="setFilter('entrypoints')">Точки входа</button>
+      <button class="btn-clipped" data-filter="sinks" onclick="setFilter('sinks')">Стоки</button>
+      <button class="btn-clipped" data-filter="hide-tests" onclick="setFilter('hide-tests')">Скрыть тесты</button>
+
+      <div class="toolbar-separator"></div>
+
+      <span class="toolbar-label">Оверлей:</span>
+      <select id="metric-overlay-select" class="metric-select" onchange="setMetricOverlay(this.value)">
+        <option value="topology">Топология</option>
+      </select>
+      <span class="overlay-info" id="overlay-info"></span>
+
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:#fb923c"></div>Точка входа</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#f87171"></div>Сток</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#6b6b6b"></div>Метод</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#6b6b6b;opacity:0.3"></div>Тест</div>
+      </div>
     </div>
+
+    <!-- Graph Area -->
+    <div class="graph-wrapper">
+      <svg id="graph-svg"></svg>
+      <div class="tooltip" id="tooltip"></div>
+
+      <!-- Detail Panel -->
+      <div class="detail-panel" id="detail-panel">
+        <button class="detail-panel-close" onclick="closeDetail()">&times;</button>
+        <div class="detail-title">Информация об узле</div>
+        <div id="detail-content"></div>
+      </div>
+    </div>
+
   </div>
 
 </div>
@@ -836,20 +1029,235 @@ const NODE_STYLE = {{
   regular:    {{ r: 3, fill: '#6b6b6b', opacity: 1 }},
 }};
 
+const GROUP_NAMES = {{
+  A: 'Поверхность атаки',
+  B: 'Глубина защиты',
+  C: 'Потоки данных',
+  D: 'Технологические границы',
+  E: 'Зависимости',
+  F: 'Изменяемость',
+}};
+
 // =========================================================================
 //  State
 // =========================================================================
 let currentFilter = 'all';
+let currentOverlay = 'topology';
 let selectedNode = null;
 
 // =========================================================================
-//  Build D3 graph
+//  Helpers
+// =========================================================================
+function escapeHtml(str) {{
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}}
+
+function riskColor(t) {{
+  t = Math.max(0, Math.min(1, t));
+  const r1 = 0x34, g1 = 0xd3, b1 = 0x99;  // #34d399 green
+  const r2 = 0xfb, g2 = 0xbf, b2 = 0x24;  // #fbbf24 yellow
+  const r3 = 0xf8, g3 = 0x71, b3 = 0x71;  // #f87171 red
+  let r, g, b;
+  if (t < 0.5) {{
+    const s = t * 2;
+    r = r1 + (r2 - r1) * s;
+    g = g1 + (g2 - g1) * s;
+    b = b1 + (b2 - b1) * s;
+  }} else {{
+    const s = (t - 0.5) * 2;
+    r = r2 + (r3 - r2) * s;
+    g = g2 + (g3 - g2) * s;
+    b = b2 + (b3 - b2) * s;
+  }}
+  return `rgb(${{Math.round(r)}},${{Math.round(g)}},${{Math.round(b)}})`;
+}}
+
+function riskBarColor(v) {{
+  if (v < 0.3) return '#34d399';
+  if (v < 0.7) return '#fbbf24';
+  return '#f87171';
+}}
+
+// =========================================================================
+//  Tab Switching
+// =========================================================================
+function switchTab(tabId) {{
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-nav .btn-clipped').forEach(btn => btn.classList.remove('active'));
+  document.getElementById('tab-' + tabId).classList.add('active');
+  document.querySelector('.tab-nav .btn-clipped[data-tab="' + tabId + '"]').classList.add('active');
+  if (tabId === 'graph') {{
+    const w = svg.node().parentElement.clientWidth;
+    const h = svg.node().parentElement.clientHeight;
+    svg.attr('viewBox', [0, 0, w, h]);
+    simulation.force('center', d3.forceCenter(w / 2, h / 2));
+    simulation.alpha(0.3).restart();
+  }}
+}}
+
+// =========================================================================
+//  Populate metric overlay select
+// =========================================================================
+(function populateOverlaySelect() {{
+  const sel = document.getElementById('metric-overlay-select');
+  const metricsMap = GRAPH_DATA.all_metrics;
+  const ids = Object.keys(metricsMap).sort();
+  ids.forEach(mid => {{
+    const m = metricsMap[mid];
+    if (m.status === 'ok') {{
+      const opt = document.createElement('option');
+      opt.value = mid;
+      opt.textContent = mid + ' — ' + m.name;
+      sel.appendChild(opt);
+    }}
+  }});
+}})();
+
+// =========================================================================
+//  Build Radar Chart
+// =========================================================================
+(function buildRadar() {{
+  const radarSvg = d3.select('#radar-svg');
+  const W = 300, H = 300;
+  const cx = W / 2, cy = H / 2;
+  const R = 110;
+  const data = GRAPH_DATA.radar;
+  const n = data.length;
+  const angleSlice = (2 * Math.PI) / n;
+  const levels = [0.33, 0.66, 1.0];
+  const gRadar = radarSvg.append('g').attr('transform', `translate(${{cx}},${{cy}})`);
+
+  // Grid polygons
+  levels.forEach(lv => {{
+    const pts = [];
+    for (let i = 0; i < n; i++) {{
+      const angle = angleSlice * i - Math.PI / 2;
+      pts.push([R * lv * Math.cos(angle), R * lv * Math.sin(angle)]);
+    }}
+    gRadar.append('polygon')
+      .attr('points', pts.map(p => p.join(',')).join(' '))
+      .attr('fill', 'none')
+      .attr('stroke', 'rgba(255,255,255,0.08)')
+      .attr('stroke-width', 1);
+  }});
+
+  // Axis lines + labels
+  data.forEach((d, i) => {{
+    const angle = angleSlice * i - Math.PI / 2;
+    const x2 = R * Math.cos(angle);
+    const y2 = R * Math.sin(angle);
+    gRadar.append('line')
+      .attr('x1', 0).attr('y1', 0)
+      .attr('x2', x2).attr('y2', y2)
+      .attr('stroke', 'rgba(255,255,255,0.06)')
+      .attr('stroke-width', 1);
+    const lx = (R + 18) * Math.cos(angle);
+    const ly = (R + 18) * Math.sin(angle);
+    gRadar.append('text')
+      .attr('x', lx).attr('y', ly)
+      .attr('text-anchor', 'middle')
+      .attr('dominant-baseline', 'central')
+      .attr('fill', '#a3a3a3')
+      .attr('font-size', '0.5625rem')
+      .attr('font-family', 'JetBrains Mono, monospace')
+      .text(d.group);
+    const nlx = (R + 32) * Math.cos(angle);
+    const nly = (R + 32) * Math.sin(angle);
+    gRadar.append('text')
+      .attr('x', nlx).attr('y', nly)
+      .attr('text-anchor', 'middle')
+      .attr('dominant-baseline', 'central')
+      .attr('fill', '#6b6b6b')
+      .attr('font-size', '0.4375rem')
+      .attr('font-family', 'JetBrains Mono, monospace')
+      .text(d.label.length > 12 ? d.label.slice(0, 12) + '..' : d.label);
+  }});
+
+  // Data area
+  const valuePts = [];
+  data.forEach((d, i) => {{
+    const v = (d.value !== null && d.value !== undefined) ? d.value : 0;
+    const angle = angleSlice * i - Math.PI / 2;
+    valuePts.push([R * v * Math.cos(angle), R * v * Math.sin(angle)]);
+  }});
+  gRadar.append('polygon')
+    .attr('points', valuePts.map(p => p.join(',')).join(' '))
+    .attr('fill', 'rgba(251,146,60,0.15)')
+    .attr('stroke', '#fb923c')
+    .attr('stroke-width', 1.5);
+
+  // Dots on vertices
+  valuePts.forEach((p, i) => {{
+    const v = data[i].value;
+    if (v !== null && v !== undefined) {{
+      gRadar.append('circle')
+        .attr('cx', p[0]).attr('cy', p[1])
+        .attr('r', 3)
+        .attr('fill', '#fb923c');
+    }}
+  }});
+}})();
+
+// =========================================================================
+//  Build Metric Cards
+// =========================================================================
+(function buildMetricCards() {{
+  const container = document.getElementById('metrics-cards');
+  const groups = {{}};
+  Object.values(GRAPH_DATA.all_metrics).forEach(m => {{
+    if (!groups[m.group]) groups[m.group] = [];
+    groups[m.group].push(m);
+  }});
+  const groupOrder = ['A', 'B', 'C', 'D', 'E', 'F'];
+  groupOrder.forEach(gid => {{
+    const items = groups[gid];
+    if (!items) return;
+    const grp = document.createElement('div');
+    grp.className = 'metrics-group';
+    const hdr = document.createElement('div');
+    hdr.className = 'metrics-group-header';
+    hdr.textContent = gid + ' — ' + (GROUP_NAMES[gid] || gid);
+    grp.appendChild(hdr);
+    const row = document.createElement('div');
+    row.className = 'metrics-group-row';
+    items.forEach(m => {{
+      const card = document.createElement('div');
+      card.className = 'metric-card' + (m.status !== 'ok' ? ' disabled' : '');
+      if (m.status === 'ok') {{
+        card.onclick = function() {{
+          switchTab('graph');
+          setMetricOverlay(m.id);
+          document.getElementById('metric-overlay-select').value = m.id;
+        }};
+      }}
+      const val = m.value !== null ? m.value : 0;
+      const pct = Math.round(val * 100);
+      card.innerHTML =
+        '<div class="metric-card-id">' + escapeHtml(m.id) + '</div>' +
+        '<div class="metric-card-name">' + escapeHtml(m.name) + '</div>' +
+        '<div class="metric-card-title">' + escapeHtml(m.title) + '</div>' +
+        '<div class="metric-card-value">' + (m.value !== null ? pct + '%' : 'N/A') + '</div>' +
+        '<div class="metric-progress"><div class="metric-progress-fill" style="width:' +
+        pct + '%;background:' + (m.value !== null ? riskBarColor(val) : '#333') + '"></div></div>';
+      row.appendChild(card);
+    }});
+    grp.appendChild(row);
+    container.appendChild(grp);
+  }});
+}})();
+
+// =========================================================================
+//  Build D3 Graph
 // =========================================================================
 const svg = d3.select('#graph-svg');
-const width = svg.node().parentElement.clientWidth;
-const height = svg.node().parentElement.clientHeight;
 
-svg.attr('viewBox', [0, 0, width, height]);
+/* Initial size: use window dimensions since the graph tab may be hidden */
+const initW = window.innerWidth;
+const initH = window.innerHeight;
+
+svg.attr('viewBox', [0, 0, initW, initH]);
 
 const g = svg.append('g');
 
@@ -872,7 +1280,7 @@ const validEdges = GRAPH_DATA.edges.filter(e => nodeIndex.has(e.source) && nodeI
 const simulation = d3.forceSimulation(GRAPH_DATA.nodes)
   .force('link', d3.forceLink(validEdges).id(d => d.id).distance(40).strength(0.3))
   .force('charge', d3.forceManyBody().strength(-60).distanceMax(300))
-  .force('center', d3.forceCenter(width / 2, height / 2))
+  .force('center', d3.forceCenter(initW / 2, initH / 2))
   .force('collision', d3.forceCollide().radius(d => NODE_STYLE[d.type].r + 1))
   .alphaDecay(0.03);
 
@@ -883,9 +1291,9 @@ const linkG = g.append('g').attr('class', 'links');
 const links = linkG.selectAll('line')
   .data(validEdges)
   .join('line')
-  .attr('stroke', '#333')
+  .attr('stroke', '#555')
   .attr('stroke-width', 0.5)
-  .attr('stroke-opacity', 0.6);
+  .attr('stroke-opacity', 0.8);
 
 // Draw nodes
 const nodeG = g.append('g').attr('class', 'nodes');
@@ -995,15 +1403,18 @@ function dragEnded(event, d) {{
 function selectNode(d) {{
   selectedNode = d;
 
-  // Reset all
+  // Reset stroke
   nodes
     .attr('stroke', 'none')
     .attr('stroke-width', 0);
 
-  links
-    .attr('stroke', '#333')
-    .attr('stroke-width', 0.5)
-    .attr('stroke-opacity', 0.6);
+  // Reset edges depending on overlay mode
+  if (currentOverlay === 'topology') {{
+    links
+      .attr('stroke', '#555')
+      .attr('stroke-width', 0.5)
+      .attr('stroke-opacity', 0.8);
+  }}
 
   // Highlight selected node
   nodes.filter(n => n.id === d.id)
@@ -1022,7 +1433,11 @@ function selectNode(d) {{
 function deselectNode() {{
   selectedNode = null;
   nodes.attr('stroke', 'none').attr('stroke-width', 0);
-  links.attr('stroke', '#333').attr('stroke-width', 0.5).attr('stroke-opacity', 0.6);
+  if (currentOverlay === 'topology') {{
+    links.attr('stroke', '#555').attr('stroke-width', 0.5).attr('stroke-opacity', 0.8);
+  }} else {{
+    links.attr('stroke', '#555').attr('stroke-width', 0.5).attr('stroke-opacity', 0.15);
+  }}
 }}
 
 // =========================================================================
@@ -1085,6 +1500,27 @@ function showDetail(d) {{
     `;
   }}
 
+  // Overlay metric details for this node
+  if (currentOverlay !== 'topology') {{
+    const overlayData = GRAPH_DATA.metric_overlays[currentOverlay];
+    const metricInfo = GRAPH_DATA.all_metrics[currentOverlay];
+    if (metricInfo) {{
+      const nodeVal = overlayData ? overlayData[d.id] : undefined;
+      html += `
+        <div class="detail-field">
+          <div class="detail-field-label">Оверлей: ${{escapeHtml(currentOverlay)}} — ${{escapeHtml(metricInfo.name)}}</div>
+          <div class="detail-field-value" style="color:${{nodeVal !== undefined ? riskColor(nodeVal) : 'var(--text-tertiary)'}}">
+            ${{nodeVal !== undefined ? (nodeVal * 100).toFixed(1) + '%' : 'нет данных'}}
+          </div>
+        </div>
+        <div class="detail-field">
+          <div class="detail-field-label">Системное значение ${{escapeHtml(currentOverlay)}}</div>
+          <div class="detail-field-value">${{metricInfo.value !== null ? (metricInfo.value * 100).toFixed(1) + '%' : 'N/A'}}</div>
+        </div>
+      `;
+    }}
+  }}
+
   content.innerHTML = html;
   panel.classList.add('open');
 }}
@@ -1093,10 +1529,87 @@ function closeDetail() {{
   document.getElementById('detail-panel').classList.remove('open');
 }}
 
-function escapeHtml(str) {{
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
+// =========================================================================
+//  Metric Overlay System
+// =========================================================================
+function setMetricOverlay(metricId) {{
+  currentOverlay = metricId;
+  document.getElementById('metric-overlay-select').value = metricId;
+  const t = d3.transition().duration(400);
+
+  if (metricId === 'topology') {{
+    // Restore original topology view
+    nodes.transition(t)
+      .attr('fill', d => NODE_STYLE[d.type].fill)
+      .attr('r', d => getNodeRadius(d))
+      .attr('opacity', d => getNodeOpacity(d));
+    links.transition(t)
+      .attr('stroke', '#555')
+      .attr('stroke-opacity', d => {{
+        const srcVis = isNodeVisible(d.source);
+        const tgtVis = isNodeVisible(d.target);
+        return (srcVis && tgtVis) ? 0.8 : 0.05;
+      }});
+    pulses.transition(t).attr('opacity', 0.6);
+    updateOverlayInfo(null);
+    return;
+  }}
+
+  const metricInfo = GRAPH_DATA.all_metrics[metricId];
+  const overlayData = GRAPH_DATA.metric_overlays[metricId];
+
+  if (overlayData) {{
+    // Color nodes by overlay values
+    nodes.transition(t)
+      .attr('fill', d => {{
+        const v = overlayData[d.id];
+        return v !== undefined ? riskColor(v) : '#333';
+      }})
+      .attr('r', d => {{
+        if (!isNodeVisible(d)) return 1;
+        const v = overlayData[d.id];
+        return v !== undefined ? 3 + v * 9 : 2;
+      }})
+      .attr('opacity', d => {{
+        if (!isNodeVisible(d)) return 0.03;
+        const v = overlayData[d.id];
+        return v !== undefined ? 1 : 0.15;
+      }});
+    links.transition(t)
+      .attr('stroke', '#555')
+      .attr('stroke-opacity', 0.15);
+    pulses.transition(t).attr('opacity', 0);
+  }} else {{
+    // Metric has no per-node overlay — keep topology, just show info
+    nodes.transition(t)
+      .attr('fill', d => NODE_STYLE[d.type].fill)
+      .attr('r', d => getNodeRadius(d))
+      .attr('opacity', d => getNodeOpacity(d));
+    links.transition(t)
+      .attr('stroke', '#555')
+      .attr('stroke-opacity', d => {{
+        const srcVis = isNodeVisible(d.source);
+        const tgtVis = isNodeVisible(d.target);
+        return (srcVis && tgtVis) ? 0.8 : 0.05;
+      }});
+    pulses.transition(t).attr('opacity', 0.6);
+  }}
+
+  updateOverlayInfo(metricId);
+}}
+
+function updateOverlayInfo(metricId) {{
+  const infoEl = document.getElementById('overlay-info');
+  if (!metricId) {{
+    infoEl.textContent = '';
+    return;
+  }}
+  const m = GRAPH_DATA.all_metrics[metricId];
+  if (!m) {{ infoEl.textContent = ''; return; }}
+  const overlayData = GRAPH_DATA.metric_overlays[metricId];
+  const nodeCount = overlayData ? Object.keys(overlayData).length : 0;
+  const valStr = m.value !== null ? (m.value * 100).toFixed(1) + '%' : 'N/A';
+  infoEl.textContent = m.title + ' = ' + valStr + (nodeCount ? ' (' + nodeCount + ' узлов)' : '');
 }}
 
 // =========================================================================
@@ -1106,7 +1619,7 @@ function setFilter(filter) {{
   currentFilter = filter;
 
   // Update buttons
-  document.querySelectorAll('.toolbar .btn-clipped').forEach(btn => {{
+  document.querySelectorAll('.toolbar .btn-clipped[data-filter]').forEach(btn => {{
     btn.classList.toggle('active', btn.dataset.filter === filter);
   }});
 
@@ -1116,18 +1629,24 @@ function setFilter(filter) {{
 function applyFilter() {{
   const t = d3.transition().duration(300);
 
+  if (currentOverlay !== 'topology' && GRAPH_DATA.metric_overlays[currentOverlay]) {{
+    // Re-apply overlay with current filter
+    setMetricOverlay(currentOverlay);
+    return;
+  }}
+
   nodes.transition(t)
     .attr('opacity', d => getNodeOpacity(d))
     .attr('r', d => getNodeRadius(d));
 
   pulses.transition(t)
-    .attr('opacity', d => currentFilter === 'sinks' ? 0 : (currentFilter === 'hide-tests' ? 0.6 : 0.6));
+    .attr('opacity', d => currentFilter === 'sinks' ? 0 : 0.6);
 
   links.transition(t)
     .attr('stroke-opacity', d => {{
       const srcVisible = isNodeVisible(d.source);
       const tgtVisible = isNodeVisible(d.target);
-      return (srcVisible && tgtVisible) ? 0.6 : 0.03;
+      return (srcVisible && tgtVisible) ? 0.8 : 0.05;
     }});
 
   // Re-apply selection highlight if any
@@ -1160,12 +1679,13 @@ function getNodeRadius(d) {{
 }}
 
 // =========================================================================
-//  Resize handler (с дебаунсингом)
+//  Resize handler
 // =========================================================================
 let _resizeTimer;
 window.addEventListener('resize', () => {{
   clearTimeout(_resizeTimer);
   _resizeTimer = setTimeout(() => {{
+    if (!document.getElementById('tab-graph').classList.contains('active')) return;
     const w = svg.node().parentElement.clientWidth;
     const h = svg.node().parentElement.clientHeight;
     svg.attr('viewBox', [0, 0, w, h]);
