@@ -1,15 +1,15 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}CSA Metrics{% endblock %}</title>
+  <title>{% block title %}CSQA Метрики{% endblock %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     /* ═══════════════════════════════════════════════════════════════════════════
-       DESIGN SYSTEM — AIComPet UI-Kit (HUD / Ledger theme)
+       DESIGN SYSTEM — HUD / Ledger theme
        ═══════════════════════════════════════════════════════════════════════════ */
 
     :root {
@@ -401,39 +401,20 @@
     }
     .repo-chip__label { color: var(--text-tertiary); font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.1em; }
 
-    /* ── Footer ──────────────────────────────────────────────────────────────── */
+    /* ── Scrollbar ───────────────────────────────────────────────────────────── */
 
-    .site-footer {
-      padding: 1rem 2rem;
-      border-top: 1px solid var(--border);
-      font-size: 0.625rem;
-      color: var(--text-tertiary);
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      display: flex;
-      justify-content: space-between;
-    }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--surface-1); }
+    ::-webkit-scrollbar-thumb { background: rgba(249, 115, 22, 0.35); }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(249, 115, 22, 0.65); }
+    * { scrollbar-width: thin; scrollbar-color: rgba(249,115,22,0.35) var(--surface-1); }
   </style>
   {% block head %}{% endblock %}
 </head>
 <body>
-  <nav class="site-nav">
-    <a href="/{{ token }}/" class="site-nav__brand">
-      CSA<span>.</span>METRICS
-    </a>
-    <div class="site-nav__right">
-      <span class="badge accent">fast mode</span>
-    </div>
-  </nav>
-
   <main style="flex:1; display:flex; flex-direction:column;">
     {% block content %}{% endblock %}
   </main>
-
-  <footer class="site-footer">
-    <span>CSA Metrics // Code Security Assessment</span>
-    <span>static analysis pipeline</span>
-  </footer>
 
   {% block scripts %}{% endblock %}
 </body>

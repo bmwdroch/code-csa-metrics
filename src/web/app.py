@@ -81,6 +81,7 @@ async def run_analysis(
     token: str,
     request: Request,
     repo_url: str = Form(...),
+    max_nodes: int = Form(500),
 ):
     _check_token(token)
     url = repo_url.strip().rstrip("/")
@@ -89,7 +90,7 @@ async def run_analysis(
             f"/{token}/?error=Invalid+GitHub+URL.+Must+be+https%3A%2F%2Fgithub.com%2Fowner%2Frepo",
             status_code=303,
         )
-    job_id = runner.start_job(url)
+    job_id = runner.start_job(url, max_nodes=max_nodes)
     return RedirectResponse(f"/{token}/job/{job_id}", status_code=303)
 
 

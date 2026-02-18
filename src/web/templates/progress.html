@@ -1,27 +1,24 @@
 {% extends "base.html" %}
 
-{% block title %}Analyzing {{ job.repo_display }} — CSA Metrics{% endblock %}
+{% block title %}Анализ {{ job.repo_display }} — CSQA Метрики{% endblock %}
 
 {% block content %}
 <div class="page-wrap page-center">
 
   <!-- Header -->
   <div style="margin-bottom: 2rem; width: 100%; max-width: 560px; text-align: left;">
-    <div style="font-size: 0.6875rem; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.15em; margin-bottom: 0.5rem;">
-      // Analysis in progress
-    </div>
     <h1 style="font-size: 1.5rem; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 0.75rem;">
-      Running Security Analysis
+      Выполняется анализ безопасности
     </h1>
   </div>
 
   <!-- Repo chip -->
   <div class="repo-chip" style="max-width: 560px; width: 100%; justify-content: flex-start;">
-    <span class="repo-chip__label">Target</span>
+    <span class="repo-chip__label">Цель</span>
     <span id="repo-url-display" style="color: var(--text-primary); font-weight: 500;">
       {{ job.repo_display }}
     </span>
-    <span class="badge" style="margin-left: auto;">fast mode</span>
+    <span class="badge" style="margin-left: auto;">быстрый режим</span>
   </div>
 
   <!-- Progress card -->
@@ -32,7 +29,7 @@
     <!-- Progress bar -->
     <div class="progress-wrap">
       <div class="progress-label">
-        <span id="stage-label">Initializing...</span>
+        <span id="stage-label">Инициализация...</span>
         <span id="pct-label">0%</span>
       </div>
       <div class="progress-bar thick">
@@ -48,23 +45,23 @@
     <div style="margin-top: 1.75rem; display: flex; flex-direction: column; gap: 0.5rem;">
       <div class="stage-item" id="stage-init">
         <span class="stage-icon">◇</span>
-        <span class="stage-text">Initialize Docker container</span>
+        <span class="stage-text">Инициализация Docker-контейнера</span>
       </div>
       <div class="stage-item" id="stage-clone">
         <span class="stage-icon">◇</span>
-        <span class="stage-text">Clone repository</span>
+        <span class="stage-text">Клонирование репозитория</span>
       </div>
       <div class="stage-item" id="stage-analyze">
         <span class="stage-icon">◇</span>
-        <span class="stage-text">Build call graph &amp; analyze code</span>
+        <span class="stage-text">Построение графа вызовов и анализ кода</span>
       </div>
       <div class="stage-item" id="stage-metrics">
         <span class="stage-icon">◇</span>
-        <span class="stage-text">Compute security metrics</span>
+        <span class="stage-text">Вычисление метрик безопасности</span>
       </div>
       <div class="stage-item" id="stage-report">
         <span class="stage-icon">◇</span>
-        <span class="stage-text">Render interactive HTML report</span>
+        <span class="stage-text">Формирование интерактивного HTML-отчёта</span>
       </div>
     </div>
 
@@ -72,20 +69,20 @@
 
   <!-- Note -->
   <p style="margin-top: 1.25rem; font-size: 0.75rem; color: var(--text-tertiary); max-width: 420px; line-height: 1.55; text-align: center;">
-    Large repositories may take several minutes to clone and analyze.
-    This page will redirect automatically when the report is ready.
+    Клонирование и анализ крупных репозиториев может занять несколько минут.
+    Страница автоматически перенаправит на отчёт по завершении.
   </p>
 
   <!-- Error panel (hidden by default) -->
   <div id="error-panel" class="alert alert-danger" style="display: none; max-width: 560px; width: 100%; margin-top: 1.5rem;">
-    <strong>Analysis failed:</strong><br>
+    <strong>Ошибка анализа:</strong><br>
     <span id="error-msg"></span>
   </div>
 
   <!-- Back link -->
   <div style="margin-top: 1.5rem;">
     <a href="/{{ token }}/" class="btn-clipped ghost" style="font-size: 0.6875rem;">
-      ← Start new analysis
+      ← Новый анализ
     </a>
   </div>
 
@@ -177,8 +174,8 @@
   function applyProgress(pct, msg, status) {
     fill.style.width  = pct + '%';
     pctLabel.textContent  = pct + '%';
-    stageLabel.textContent = status === 'done' ? 'Complete' :
-                             status === 'failed' ? 'Failed' : 'Running';
+    stageLabel.textContent = status === 'done' ? 'Завершено' :
+                             status === 'failed' ? 'Ошибка' : 'Выполняется';
     statusMsg.textContent = msg;
     updateStages(pct, status);
 
@@ -210,15 +207,15 @@
     es.addEventListener('done', function (e) {
       const d = JSON.parse(e.data);
       es.close();
-      applyProgress(100, 'Analysis complete! Redirecting…', 'done');
+      applyProgress(100, 'Анализ завершён! Перенаправление…', 'done');
       setTimeout(() => { window.location.href = d.redirect; }, 900);
     });
 
     es.addEventListener('fail', function (e) {
       es.close();
       const d = JSON.parse(e.data);
-      applyProgress(0, 'Analysis failed', 'failed');
-      errorMsg.textContent   = d.message || 'Unknown error';
+      applyProgress(0, 'Ошибка анализа', 'failed');
+      errorMsg.textContent   = d.message || 'Неизвестная ошибка';
       errorPanel.style.display = 'block';
     });
 

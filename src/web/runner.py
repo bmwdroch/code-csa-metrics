@@ -37,6 +37,7 @@ _DRIFT_INTERVAL = 8.0  # seconds between ticks
 class Job:
     id: str
     repo_url: str
+    max_nodes: int = 500
     status: str = "queued"   # queued | running | done | failed
     percent: int = 0
     message: str = "Queued..."
@@ -61,10 +62,10 @@ class JobRunner:
 
     # ── Public API ──────────────────────────────────────────────────────────────
 
-    def start_job(self, repo_url: str) -> str:
+    def start_job(self, repo_url: str, max_nodes: int = 500) -> str:
         """Create and start a new analysis job. Returns job ID."""
         job_id = uuid.uuid4().hex[:12]
-        job = Job(id=job_id, repo_url=repo_url)
+        job = Job(id=job_id, repo_url=repo_url, max_nodes=max_nodes)
         with self._lock:
             self._jobs[job_id] = job
         t = threading.Thread(target=self._run_job, args=(job,), daemon=True)
@@ -110,6 +111,7 @@ class JobRunner:
             "--mode", "fast",
             "--render-html",
             "--out-dir", out_dir_rel,
+            "--max-graph-nodes", str(job.max_nodes),
         ]
 
         try:

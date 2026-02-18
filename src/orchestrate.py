@@ -169,6 +169,7 @@ def main() -> int:
     parser.add_argument("--memory", default="", help="Docker --memory value, e.g. 2g")
     parser.add_argument("--m2-cache-dir", default="", help="Host dir to mount as /root/.m2 (speeds up Maven in full mode)")
     parser.add_argument("--timeout", type=int, default=0, help="Container timeout in seconds (0 = no limit)")
+    parser.add_argument("--max-graph-nodes", type=int, default=500, help="Max nodes for the call graph in the HTML report (default: 500)")
     args = parser.parse_args()
 
     repo_root = Path(__file__).resolve().parents[1]
@@ -357,6 +358,8 @@ def main() -> int:
                     str(combined_path),
                     "--output",
                     str(html_path),
+                    "--max-graph-nodes",
+                    str(args.max_graph_nodes),
                 ],
                 cwd=repo_root,
             )
