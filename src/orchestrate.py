@@ -134,7 +134,7 @@ def parse_mem_usage(mem_usage_field: str) -> tuple[int | None, int | None]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Orchestrate CSA metrics analyzer in Docker and measure timings.")
+    parser = argparse.ArgumentParser(description="Orchestrate CSQA metrics analyzer in Docker and measure timings.")
     parser.add_argument("--repo-url", default="https://github.com/langchain4j/langchain4j", help="Target Git repo URL")
     parser.add_argument("--ref", default="", help="Git ref (branch/tag/commit). Empty = default branch HEAD")
     parser.add_argument("--mode", choices=["fast", "full"], default="full", help="Analyzer mode")
@@ -158,7 +158,7 @@ def main() -> int:
     if args.image_tag:
         image_tag = args.image_tag
     else:
-        image_tag = f"csa-metrics:{args.mode}"
+        image_tag = f"csqa-metrics:{args.mode}"
 
     orchestrator = {
         "meta": {
@@ -197,7 +197,7 @@ def main() -> int:
             write_json(out_dir / "orchestrator.json", orchestrator)
             return 2
 
-    container_name = f"csa-metrics-{int(time.time())}"
+    container_name = f"csqa-metrics-{int(time.time())}"
 
     docker_run_cmd = ["docker", "run", "-d", "--name", container_name]
     if args.cpu:

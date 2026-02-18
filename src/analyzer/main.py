@@ -64,7 +64,7 @@ def git_clone(repo_url: str, ref: str, dest: Path, depth: int) -> dict:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="CSA metrics analyzer (runs inside container)")
+    parser = argparse.ArgumentParser(description="CSQA metrics analyzer (runs inside container)")
     parser.add_argument("--repo-url", required=True)
     parser.add_argument("--ref", default="")
     parser.add_argument("--depth", type=int, default=1)

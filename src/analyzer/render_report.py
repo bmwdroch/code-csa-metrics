@@ -1,4 +1,4 @@
-"""Генератор интерактивного HTML-отчёта CSA (все метрики безопасности).
+"""Генератор интерактивного HTML-отчёта CSQA (все метрики безопасности).
 
 Читает combined.json и создаёт самодостаточный HTML-файл с D3.js force-directed
 графом и панелью сводных показателей в HUD-стилистике.
@@ -25,7 +25,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         Пространство имён с полями ``input`` и ``output``.
     """
     parser = argparse.ArgumentParser(
-        description="Генерация интерактивного HTML-отчёта CSA (все метрики)",
+        description="Генерация интерактивного HTML-отчёта CSQA (все метрики)",
     )
     parser.add_argument(
         "--input", "-i",
@@ -34,8 +34,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--output", "-o",
-        default="csa-report.html",
-        help="Путь к выходному HTML-файлу (по умолчанию: csa-report.html)",
+        default="csqa-report.html",
+        help="Путь к выходному HTML-файлу (по умолчанию: csqa-report.html)",
     )
     parser.add_argument(
         "--max-graph-nodes",
@@ -530,7 +530,7 @@ def _render_html(graph_data: dict[str, Any]) -> str:
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CSA Security Report &mdash; {_escape_html(meta["repo_name"])}</title>
+<title>CSQA Report &mdash; {_escape_html(meta["repo_name"])}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -1137,7 +1137,7 @@ html, body {{
     <span class="dot-corner bl"></span>
     <span class="dot-corner br"></span>
     <div class="hud-panel-header">
-      <div class="hud-panel-title">CSA &middot; CODE QUALITY-SECURITY REPORT</div>
+      <div class="hud-panel-title">CSQA &middot; CODE QUALITY AND SECURITY ASSESSMENT</div>
       <div class="hud-panel-meta">
         <span>repo: <b>{_escape_html(meta["repo_name"])}</b></span>
         <span>mode: <b>{_escape_html(meta["mode"])}</b></span>
@@ -2056,7 +2056,7 @@ def main(argv: list[str] | None = None) -> int:
     for n in graph_data["nodes"]:
         node_counts[n["type"]] = node_counts.get(n["type"], 0) + 1
 
-    print(f"Отчёт CSA сгенерирован: {output_path}")
+    print(f"Отчёт CSQA сгенерирован: {output_path}")
     print(f"  Узлов: {len(graph_data['nodes'])} "
           f"(entrypoint={node_counts.get('entrypoint', 0)}, "
           f"sink={node_counts.get('sink', 0)}, "
