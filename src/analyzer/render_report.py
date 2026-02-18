@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import re
 import sys
@@ -1268,7 +1269,7 @@ html, body {{
 
 </div>
 
-<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="https://d3js.org/d3.v7.min.js" integrity="sha384-CjloA8y00+1SDAUkjs099PVfnY2KmDC2BZnws9kh8D/lX1s46w6EPhpXdqMfjK6i" crossorigin="anonymous"></script>
 <script>
 // =========================================================================
 //  Data
@@ -2038,8 +2039,7 @@ def _escape_html(text: str) -> str:
     Returns:
         Строка с заменёнными ``&``, ``<``, ``>``, ``"`` и ``'``.
     """
-    import html as _html_mod
-    return _html_mod.escape(text, quote=True)
+    return html.escape(text, quote=True)
 
 
 def main(argv: list[str] | None = None) -> int:

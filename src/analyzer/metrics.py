@@ -375,7 +375,10 @@ def metric_B2_PPI(graph: JavaGraph | None, *, max_graph_depth: int) -> dict:
             "sinks_privileged": len(privileged_sinks),
             "notes": ["Unauthenticated entrypoints and privileged sinks exist, but no path was found within max_graph_depth."],
         }
-    return {"status": "ok", "PPI": 1.0 / (min_dist + 1), "min_distance": min_dist}
+    # Логарифмическая нормализация с cap при расстоянии 10.
+    # dist=0 → PPI=1.0 (максимальный риск), dist=10 → PPI=0.0 (минимальный риск).
+    ppi = 1.0 - min(1.0, math.log(min_dist + 1) / math.log(11))
+    return {"status": "ok", "PPI": ppi, "min_distance": min_dist}
 
 
 def metric_B3_MPSP(graph: JavaGraph | None, *, max_graph_depth: int) -> dict:

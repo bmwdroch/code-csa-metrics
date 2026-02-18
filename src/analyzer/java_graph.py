@@ -20,10 +20,10 @@ ENTRY_ANN_HTTP = {
     "DeleteMapping",
     "PatchMapping",
 }
-ENTRY_ANN_MQ = {"KafkaListener", "JmsListener", "RabbitListener", "SqsListener", "Consumer"}
+ENTRY_ANN_MQ = {"KafkaListener", "JmsListener", "RabbitListener", "SqsListener"}
 ENTRY_ANN_JOB = {"Scheduled"}
 
-AUTH_ANN = {"PreAuthorize", "Secured", "RolesAllowed"}
+AUTH_ANN = {"PreAuthorize", "Secured", "RolesAllowed", "PermitAll", "DenyAll"}
 
 VALIDATION_ANN = {"Valid", "NotNull", "NotEmpty", "NotBlank", "Size", "Pattern", "Min", "Max"}
 
@@ -37,7 +37,13 @@ SECRET_WORDS_PAT = re.compile(r"\b(password|passwd|token|secret|apiKey|apikey|cr
 LOG_PAT = re.compile(r"\b(log\.info|log\.debug|log\.warn|log\.error|logger\.)")
 SERIALIZE_PAT = re.compile(r"\b(objectMapper\.writeValueAsString|toJson|serialize)\b")
 
-ETI_LEAK_PAT = re.compile(r"(getMessage\(\)|printStackTrace\(\))")
+ETI_LEAK_PAT = re.compile(
+    r"(getMessage\(\)|printStackTrace\(\)|getCause\(\)|getStackTrace\(\)"
+    r"|\.toString\(\)\s*[+,]"  # конкатенация исключения в строку
+    r"|String\.valueOf\(e\b"   # явное преобразование
+    r")",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -231,9 +237,6 @@ def _class_kind_from_decl(src: bytes, decl_node) -> str:
         modifiers = decl_node.child_by_field_name("modifiers")
         if modifiers and "abstract" in _node_text(src, modifiers).split():
             return "abstract"
-        # Fallback for parser variants where modifiers are not exposed as field.
-        if "abstract" in _node_text(src, decl_node).split():
-            return "abstract"
     return "concrete"
 
 
@@ -276,7 +279,8 @@ def _resolve_placeholder_edges(edges: dict[str, set[str]], method_defs_by_name: 
                 # Prefer bounded expansion to avoid blow-ups.
                 cands = method_defs_by_name.get(name, [])
                 for mid in cands[:20]:
-                    out.add(mid)
+                    if mid != src:
+                        out.add(mid)
             else:
                 out.add(dst)
         resolved[src] = out
@@ -483,7 +487,7 @@ class JavaGraph:
         # Analyze catch blocks text.
         total = len(self.catch_blocks)
         if total == 0:
-            return {"FSS": 1.0, "catches_total": 0, "fail_closed": 0, "fail_open": 0, "ambiguous": 0}
+            return {"FSS": None, "status": "not_available", "note": "no_catch_blocks"}
         fail_closed = 0
         fail_open = 0
         ambiguous = 0
@@ -555,7 +559,7 @@ class JavaGraph:
             stripped = re.sub(r"\s+", "", body)
             if stripped == "{}":
                 swallowed += 1
-            if ETI_LEAK_PAT.search(body) and ("return" in body or "ResponseEntity" in body):
+            if ETI_LEAK_PAT.search(body):
                 leaks += 1
         return {"ETI": leaks / total, "catches_total": total, "leaks": leaks, "swallowed": swallowed}
 
@@ -732,7 +736,7 @@ def build_java_graph(repo_dir: Path, *, max_files: int | None) -> JavaGraph:
                         entry_type=entry_type,
                         has_auth=has_auth,
                         has_validation=has_val,
-                        param_risk=risk if risk in {"stringy", "untyped"} else "low",
+                        param_risk=risk if risk in {"stringy", "untyped", "binary"} else "low",
                         entropy_level=entropy,
                     )
                 )
@@ -740,8 +744,11 @@ def build_java_graph(repo_dir: Path, *, max_files: int | None) -> JavaGraph:
             body = _first_child(m, "block")
             body_text = _node_text(src, body) if body else ""
             flags = {
-                "auth": has_auth,
-                "authz": bool(anns & {"PreAuthorize", "Secured", "RolesAllowed"}),
+                "auth": (
+                    bool(anns & {"Authenticated", "SecurityRequirement"})
+                    or bool(re.search(r'SecurityContextHolder|getAuthentication\(\)|isAuthenticated\(\)', body_text))
+                ),
+                "authz": bool(anns & AUTH_ANN),
                 "validation": has_val,
                 "sanitize": bool(SANITIZE_PAT.search(body_text)),
                 "rate": bool(anns & RATE_ANN),
@@ -776,9 +783,13 @@ def build_java_graph(repo_dir: Path, *, max_files: int | None) -> JavaGraph:
                 if block:
                     catch_blocks.append(_node_text(src, block))
 
-            # naive sinks detection from body text
+            # naive sinks detection from body text and annotations
             if body_text:
-                if re.search(r"\b(update|delete|save|persist|merge|remove|executeUpdate)\b", body_text):
+                if re.search(
+                    r"\b(update|delete|save|persist|merge|remove|executeUpdate|execute"
+                    r"|batchUpdate|query|queryForObject|queryForList)\b",
+                    body_text,
+                ) or "Query" in anns:
                     sinks.append(Sink(method_id=mid, kind="db", privileged=True))
                 elif re.search(r"\b(Files\.write|FileOutputStream|PrintWriter)\b", body_text):
                     sinks.append(Sink(method_id=mid, kind="fs", privileged=True))
