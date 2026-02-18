@@ -1,5 +1,7 @@
 out/
+.env
 __pycache__/
 *.pyc
 .python-version
 .playwright*
+.venv

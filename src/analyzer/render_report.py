@@ -607,30 +607,43 @@ html, body {{
 .hud-panel-header {{
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 1rem;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  min-width: 0;
 }}
 .hud-panel-title {{
-  font-size: 0.9375rem;
+  font-size: 0.75rem;
   font-weight: 600;
   color: var(--text-primary);
-  letter-spacing: 0.05em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }}
 .hud-panel-meta {{
   display: flex;
-  gap: 1.5rem;
+  gap: 1rem;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  margin-left: auto;
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
 }}
 .hud-panel-meta span {{
   font-size: 0.6875rem;
   color: var(--text-tertiary);
   letter-spacing: 0.05em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 1;
+  min-width: 0;
 }}
 .hud-panel-meta span b {{
   color: var(--text-secondary);
   font-weight: 500;
+}}
+.hud-panel-meta .meta-secondary {{
+  flex-shrink: 2;
 }}
 
 /* ======================================================================
@@ -649,69 +662,50 @@ html, body {{
 .dot-corner.br {{ bottom: 6px; right: 6px; }}
 
 /* ======================================================================
-   Summary Row
+   Hud Panel Tabs (moved into header)
    ====================================================================== */
-.summary-row {{
+.hud-panel-tabs {{
   display: flex;
-  gap: 0;
-  border-bottom: 1px solid var(--border);
+  gap: 0.375rem;
   flex-shrink: 0;
-}}
-.stat-card {{
-  position: relative;
-  flex: 1;
-  background: var(--surface-1);
-  border-right: 1px solid var(--border);
-  padding: 1rem 1.25rem;
-  min-width: 0;
-}}
-.stat-card:last-child {{ border-right: none; }}
-.stat-label {{
-  font-size: 0.6875rem;
-  font-weight: 500;
-  color: var(--text-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 0.15em;
-  margin-bottom: 0.35rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}}
-.stat-value {{
-  font-size: 1.75rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  line-height: 1;
-}}
-.stat-value.accent {{ color: var(--accent); }}
-.stat-value.danger {{ color: var(--danger); }}
-
-/* Progress bar for aggregate score */
-.progress-bar {{
-  position: relative;
-  width: 100%;
-  height: 4px;
-  background: var(--surface-2);
-  margin-top: 0.5rem;
-  overflow: hidden;
-}}
-.progress-fill {{
-  height: 100%;
-  background: linear-gradient(90deg, var(--accent), #fdba74);
-  transition: width 0.3s ease;
 }}
 
 /* ======================================================================
-   Tab Navigation
+   Summary Stats (next to radar)
    ====================================================================== */
-.tab-nav {{
+.summary-stats {{
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  background: var(--surface-1);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
+  flex-direction: column;
+  gap: 0.875rem;
+  min-width: 160px;
+}}
+.summary-stat-label {{
+  font-size: 0.5625rem;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-bottom: 0.15rem;
+}}
+.summary-stat-value {{
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1;
+}}
+.summary-stat-sub {{
+  font-size: 0.5625rem;
+  margin-top: 0.2rem;
+}}
+.summary-score-bar {{
+  height: 3px;
+  background: var(--surface-2);
+  margin-top: 0.25rem;
+  overflow: hidden;
+  width: 100%;
+}}
+.summary-score-fill {{
+  height: 100%;
+  transition: width 0.3s ease;
 }}
 
 /* ======================================================================
@@ -740,11 +734,12 @@ html, body {{
   flex: 1;
 }}
 
-/* Radar */
+/* Radar + Stats */
 .radar-container {{
   display: flex;
   justify-content: center;
   align-items: center;
+  gap: 2.5rem;
   padding: 1rem 0 1.5rem;
 }}
 
@@ -1145,6 +1140,15 @@ html, body {{
 .node-pulse {{
   animation: pulse-ring 2s ease-out infinite;
 }}
+
+/* ======================================================================
+   Custom Scrollbar
+   ====================================================================== */
+::-webkit-scrollbar {{ width: 6px; height: 6px; }}
+::-webkit-scrollbar-track {{ background: var(--surface-1); }}
+::-webkit-scrollbar-thumb {{ background: rgba(249, 115, 22, 0.35); }}
+::-webkit-scrollbar-thumb:hover {{ background: rgba(249, 115, 22, 0.65); }}
+* {{ scrollbar-width: thin; scrollbar-color: rgba(249,115,22,0.35) var(--surface-1); }}
 </style>
 </head>
 <body>
@@ -1158,57 +1162,17 @@ html, body {{
     <span class="dot-corner br"></span>
     <div class="hud-panel-header">
       <div class="hud-panel-title">CSQA &middot; CODE QUALITY AND SECURITY ASSESSMENT</div>
+      <div class="hud-panel-tabs">
+        <button class="btn-clipped active" data-tab="dashboard" onclick="switchTab('dashboard')">Дашборд</button>
+        <button class="btn-clipped" data-tab="graph" onclick="switchTab('graph')">Граф</button>
+      </div>
       <div class="hud-panel-meta">
         <span>repo: <b>{_escape_html(meta["repo_name"])}</b></span>
-        <span>mode: <b>{_escape_html(meta["mode"])}</b></span>
-        <span>commit: <b>{_escape_html(commit_short)}</b></span>
-        <span>generated: <b>{_escape_html(meta["generated_at"])}</b></span>
+        <span class="meta-secondary">mode: <b>{_escape_html(meta["mode"])}</b></span>
+        <span class="meta-secondary">commit: <b>{_escape_html(commit_short)}</b></span>
+        <span class="meta-secondary">generated: <b>{_escape_html(meta["generated_at"])}</b></span>
       </div>
     </div>
-  </div>
-
-  <!-- Summary Row -->
-  <div class="summary-row">
-    <div class="stat-card">
-      <span class="dot-corner tl"></span><span class="dot-corner tr"></span>
-      <span class="dot-corner bl"></span><span class="dot-corner br"></span>
-      <div class="stat-label">Узлы</div>
-      <div class="stat-value">{summary["nodes"]}</div>
-    </div>
-    <div class="stat-card">
-      <span class="dot-corner tl"></span><span class="dot-corner tr"></span>
-      <span class="dot-corner bl"></span><span class="dot-corner br"></span>
-      <div class="stat-label">Связи</div>
-      <div class="stat-value">{summary["edges"]}</div>
-    </div>
-    <div class="stat-card">
-      <span class="dot-corner tl"></span><span class="dot-corner tr"></span>
-      <span class="dot-corner bl"></span><span class="dot-corner br"></span>
-      <div class="stat-label" title="HTTP-эндпоинты и другие публичные методы, доступные извне">Точки входа</div>
-      <div class="stat-value accent">{summary["entrypoints"]}</div>
-    </div>
-    <div class="stat-card">
-      <span class="dot-corner tl"></span><span class="dot-corner tr"></span>
-      <span class="dot-corner bl"></span><span class="dot-corner br"></span>
-      <div class="stat-label" title="Приёмники данных — методы, записывающие данные: БД, API, файлы и т.д.">Приёмники</div>
-      <div class="stat-value danger">{summary["sinks"]}</div>
-    </div>
-    <div class="stat-card">
-      <span class="dot-corner tl"></span><span class="dot-corner tr"></span>
-      <span class="dot-corner bl"></span><span class="dot-corner br"></span>
-      <div class="stat-label" title="Средневзвешенный уровень безопасности: 0% — максимальная защищённость, 100% — максимальный риск">Общая оценка</div>
-      <div class="stat-value" style="color:{score_color}">{score_display}</div>
-      <div style="font-size:0.6875rem;color:{score_color};margin-top:0.2rem">{score_label}</div>
-      <div class="progress-bar">
-        <div class="progress-fill" style="width:{score_pct}%;background:{score_color}"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Tab Navigation -->
-  <div class="tab-nav">
-    <button class="btn-clipped active" data-tab="dashboard" onclick="switchTab('dashboard')">Дашборд</button>
-    <button class="btn-clipped" data-tab="graph" onclick="switchTab('graph')">Граф</button>
   </div>
 
   <!-- ================================================================
@@ -1217,7 +1181,33 @@ html, body {{
   <div id="tab-dashboard" class="tab-content active" data-tab-type="dashboard">
     <div class="dashboard-content">
       <div class="radar-container">
-        <svg id="radar-svg" width="500" height="500"></svg>
+        <svg id="radar-svg" width="420" height="420"></svg>
+        <div class="summary-stats">
+          <div>
+            <div class="summary-stat-label">Узлы</div>
+            <div class="summary-stat-value">{summary["nodes"]}</div>
+          </div>
+          <div>
+            <div class="summary-stat-label">Связи</div>
+            <div class="summary-stat-value">{summary["edges"]}</div>
+          </div>
+          <div>
+            <div class="summary-stat-label" title="HTTP-эндпоинты и другие публичные методы, доступные извне">Точки входа</div>
+            <div class="summary-stat-value" style="color:var(--accent)">{summary["entrypoints"]}</div>
+          </div>
+          <div>
+            <div class="summary-stat-label" title="Приёмники данных — методы, записывающие данные: БД, API, файлы и т.д.">Приёмники</div>
+            <div class="summary-stat-value" style="color:var(--danger)">{summary["sinks"]}</div>
+          </div>
+          <div>
+            <div class="summary-stat-label" title="Средневзвешенный уровень безопасности: 0% — максимальная защищённость, 100% — максимальный риск">Общая оценка</div>
+            <div class="summary-stat-value" style="color:{score_color}">{score_pct}%</div>
+            <div class="summary-stat-sub" style="color:{score_color}">{score_label}</div>
+            <div class="summary-score-bar">
+              <div class="summary-score-fill" style="width:{score_pct}%;background:{score_color}"></div>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="metrics-grid" id="metrics-cards"></div>
     </div>
@@ -1343,9 +1333,9 @@ function riskBarColor(v) {{
 // =========================================================================
 function switchTab(tabId) {{
   document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-  document.querySelectorAll('.tab-nav .btn-clipped').forEach(btn => btn.classList.remove('active'));
+  document.querySelectorAll('.hud-panel-tabs .btn-clipped').forEach(btn => btn.classList.remove('active'));
   document.getElementById('tab-' + tabId).classList.add('active');
-  document.querySelector('.tab-nav .btn-clipped[data-tab="' + tabId + '"]').classList.add('active');
+  document.querySelector('.hud-panel-tabs .btn-clipped[data-tab="' + tabId + '"]').classList.add('active');
   if (tabId === 'graph') {{
     const w = svg.node().parentElement.clientWidth;
     const h = svg.node().parentElement.clientHeight;
@@ -1379,9 +1369,9 @@ function switchTab(tabId) {{
 // =========================================================================
 (function buildRadar() {{
   const radarSvg = d3.select('#radar-svg');
-  const W = 500, H = 500;
+  const W = 420, H = 420;
   const cx = W / 2, cy = H / 2;
-  const R = 170;
+  const R = 150;
   const data = GRAPH_DATA.radar;
   const n = data.length;
   const angleSlice = (2 * Math.PI) / n;
@@ -1425,29 +1415,17 @@ function switchTab(tabId) {{
       .attr('stroke-width', 1);
 
     // Group letter label
-    const lx = (R + 20) * Math.cos(angle);
-    const ly = (R + 20) * Math.sin(angle);
+    const lx = (R + 18) * Math.cos(angle);
+    const ly = (R + 18) * Math.sin(angle);
     gRadar.append('text')
       .attr('x', lx).attr('y', ly)
       .attr('text-anchor', 'middle')
       .attr('dominant-baseline', 'central')
       .attr('fill', '#e5e5e5')
-      .attr('font-size', '12px')
-      .attr('font-weight', '600')
+      .attr('font-size', '13px')
+      .attr('font-weight', '700')
       .attr('font-family', 'JetBrains Mono, monospace')
       .text(d.group);
-
-    // Group name label
-    const nlx = (R + 42) * Math.cos(angle);
-    const nly = (R + 42) * Math.sin(angle);
-    gRadar.append('text')
-      .attr('x', nlx).attr('y', nly)
-      .attr('text-anchor', 'middle')
-      .attr('dominant-baseline', 'central')
-      .attr('fill', '#737373')
-      .attr('font-size', '9px')
-      .attr('font-family', 'JetBrains Mono, monospace')
-      .text(d.label);
 
     // Value label near dot
     const v = (d.value !== null && d.value !== undefined) ? d.value : null;

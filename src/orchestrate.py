@@ -169,6 +169,7 @@ def main() -> int:
     parser.add_argument("--memory", default="", help="Docker --memory value, e.g. 2g")
     parser.add_argument("--m2-cache-dir", default="", help="Host dir to mount as /root/.m2 (speeds up Maven in full mode)")
     parser.add_argument("--timeout", type=int, default=0, help="Container timeout in seconds (0 = no limit)")
+    parser.add_argument("--max-graph-nodes", type=int, default=500, help="Max nodes for the call graph in the HTML report (default: 500)")
     args = parser.parse_args()
 
     repo_root = Path(__file__).resolve().parents[1]
@@ -246,9 +247,14 @@ def main() -> int:
         ensure_dir(m2)
         docker_run_cmd += ["-v", f"{m2}:/root/.m2"]
 
+    # DooD: Docker daemon ищет путь на ХОСТЕ, а не внутри контейнера.
+    # CSQA_HOST_OUT_DIR задаётся через docker-compose как хостовый аналог /app/out.
+    host_out_base = os.environ.get("CSQA_HOST_OUT_DIR")
+    docker_vol_src = Path(host_out_base) / out_dir.name if host_out_base else out_dir
+
     docker_run_cmd += [
         "-v",
-        f"{out_dir}:/out",
+        f"{docker_vol_src}:/out",
         image_tag,
         "--repo-url",
         args.repo_url,
@@ -357,6 +363,8 @@ def main() -> int:
                     str(combined_path),
                     "--output",
                     str(html_path),
+                    "--max-graph-nodes",
+                    str(args.max_graph_nodes),
                 ],
                 cwd=repo_root,
             )
