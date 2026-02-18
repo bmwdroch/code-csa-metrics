@@ -37,6 +37,13 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="csa-report.html",
         help="Путь к выходному HTML-файлу (по умолчанию: csa-report.html)",
     )
+    parser.add_argument(
+        "--max-graph-nodes",
+        type=int,
+        default=500,
+        help="Максимум узлов для графа (по умолчанию: 500). "
+             "При превышении отбираются наиболее значимые узлы.",
+    )
     return parser.parse_args(argv)
 
 
@@ -165,11 +172,61 @@ _GROUP_NAMES: dict[str, str] = {
 }
 
 
-def _build_graph_data(data: dict[str, Any]) -> dict[str, Any]:
+def _trim_graph(
+    all_nodes: list[str],
+    all_edges: list[list[str]],
+    entrypoint_ids: set[str],
+    sink_ids: set[str],
+    max_nodes: int,
+) -> tuple[list[str], list[list[str]]]:
+    """Сокращение графа до max_nodes наиболее значимых узлов.
+
+    Приоритет отбора: точки входа, стоки, затем узлы с наибольшим числом
+    связей. Рёбра фильтруются до оставшихся узлов.
+
+    Args:
+        all_nodes: Все идентификаторы узлов.
+        all_edges: Все рёбра ``[source, target]``.
+        entrypoint_ids: Множество точек входа.
+        sink_ids: Множество стоков.
+        max_nodes: Максимальное число узлов.
+
+    Returns:
+        Кортеж ``(trimmed_nodes, trimmed_edges)``.
+    """
+    if len(all_nodes) <= max_nodes:
+        return all_nodes, all_edges
+
+    # Считаем степень каждого узла
+    degree: dict[str, int] = {}
+    for src, tgt in all_edges:
+        degree[src] = degree.get(src, 0) + 1
+        degree[tgt] = degree.get(tgt, 0) + 1
+
+    node_set = set(all_nodes)
+    kept: set[str] = set()
+
+    # 1. Все точки входа и стоки
+    kept |= entrypoint_ids & node_set
+    kept |= sink_ids & node_set
+
+    # 2. Добираем по степени до лимита
+    if len(kept) < max_nodes:
+        remaining = [n for n in all_nodes if n not in kept]
+        remaining.sort(key=lambda n: degree.get(n, 0), reverse=True)
+        kept.update(remaining[: max_nodes - len(kept)])
+
+    trimmed_nodes = [n for n in all_nodes if n in kept]
+    trimmed_edges = [e for e in all_edges if e[0] in kept and e[1] in kept]
+    return trimmed_nodes, trimmed_edges
+
+
+def _build_graph_data(data: dict[str, Any], *, max_graph_nodes: int = 500) -> dict[str, Any]:
     """Формирование структуры GRAPH_DATA для встраивания в HTML.
 
     Args:
         data: Полный словарь combined.json.
+        max_graph_nodes: Максимальное число узлов для графа визуализации.
 
     Returns:
         Словарь GRAPH_DATA со всеми полями для визуализации.
@@ -183,8 +240,8 @@ def _build_graph_data(data: dict[str, Any]) -> dict[str, Any]:
     aggregate = metrics.get("aggregate", {})
 
     export = m1.get("export", {})
-    all_nodes = export.get("nodes", [])
-    all_edges = export.get("edges", [])
+    raw_nodes = export.get("nodes", [])
+    raw_edges = export.get("edges", [])
 
     # Определение точек входа: предпочитаем entrypoint_ids из export,
     # при отсутствии используем A1.sample[].method как запасной вариант
@@ -194,6 +251,11 @@ def _build_graph_data(data: dict[str, Any]) -> dict[str, Any]:
         entrypoint_ids = {s["method"] for s in a1.get("sample", []) if "method" in s}
 
     sink_ids = set(export.get("sink_ids", []))
+
+    # Сокращение графа до лимита
+    all_nodes, all_edges = _trim_graph(
+        raw_nodes, raw_edges, entrypoint_ids, sink_ids, max_graph_nodes,
+    )
 
     # Классификация узлов
     nodes = _classify_nodes(all_nodes, entrypoint_ids, sink_ids)
@@ -268,7 +330,7 @@ def _build_graph_data(data: dict[str, Any]) -> dict[str, Any]:
     radar_data: list[dict[str, Any]] = []
     for gid in ("A", "B", "C", "D", "E", "F"):
         vals = group_values.get(gid, [])
-        avg = round(sum(vals) / len(vals), 4) if vals else None
+        avg = round(min(1.0, max(0.0, sum(vals) / len(vals))), 4) if vals else None
         radar_data.append({"group": gid, "label": _GROUP_NAMES[gid], "value": avg})
 
     repo_url = meta.get("repo_url", "")
@@ -960,7 +1022,7 @@ html, body {{
   <div id="tab-dashboard" class="tab-content active" data-tab-type="dashboard">
     <div class="dashboard-content">
       <div class="radar-container">
-        <svg id="radar-svg" width="300" height="300"></svg>
+        <svg id="radar-svg" width="400" height="400"></svg>
       </div>
       <div class="metrics-grid" id="metrics-cards"></div>
     </div>
@@ -1043,6 +1105,8 @@ const GROUP_NAMES = {{
 // =========================================================================
 let currentFilter = 'all';
 let currentOverlay = 'topology';
+let overlayMin = 0;
+let overlayMax = 1;
 let selectedNode = null;
 
 // =========================================================================
@@ -1120,13 +1184,13 @@ function switchTab(tabId) {{
 // =========================================================================
 (function buildRadar() {{
   const radarSvg = d3.select('#radar-svg');
-  const W = 300, H = 300;
+  const W = 400, H = 400;
   const cx = W / 2, cy = H / 2;
-  const R = 110;
+  const R = 140;
   const data = GRAPH_DATA.radar;
   const n = data.length;
   const angleSlice = (2 * Math.PI) / n;
-  const levels = [0.33, 0.66, 1.0];
+  const levels = [0.25, 0.5, 0.75, 1.0];
   const gRadar = radarSvg.append('g').attr('transform', `translate(${{cx}},${{cy}})`);
 
   // Grid polygons
@@ -1139,8 +1203,19 @@ function switchTab(tabId) {{
     gRadar.append('polygon')
       .attr('points', pts.map(p => p.join(',')).join(' '))
       .attr('fill', 'none')
-      .attr('stroke', 'rgba(255,255,255,0.08)')
-      .attr('stroke-width', 1);
+      .attr('stroke', 'rgba(255,255,255,0.12)')
+      .attr('stroke-width', lv === 1.0 ? 1.5 : 0.5)
+      .attr('stroke-dasharray', lv === 1.0 ? 'none' : '2,3');
+
+    // Level label on first axis
+    const labelAngle = angleSlice * 0 - Math.PI / 2;
+    gRadar.append('text')
+      .attr('x', R * lv * Math.cos(labelAngle) + 6)
+      .attr('y', R * lv * Math.sin(labelAngle) - 4)
+      .attr('fill', 'rgba(255,255,255,0.25)')
+      .attr('font-size', '9px')
+      .attr('font-family', 'JetBrains Mono, monospace')
+      .text(Math.round(lv * 100) + '%');
   }});
 
   // Axis lines + labels
@@ -1151,42 +1226,63 @@ function switchTab(tabId) {{
     gRadar.append('line')
       .attr('x1', 0).attr('y1', 0)
       .attr('x2', x2).attr('y2', y2)
-      .attr('stroke', 'rgba(255,255,255,0.06)')
+      .attr('stroke', 'rgba(255,255,255,0.1)')
       .attr('stroke-width', 1);
-    const lx = (R + 18) * Math.cos(angle);
-    const ly = (R + 18) * Math.sin(angle);
+
+    // Group letter label
+    const lx = (R + 16) * Math.cos(angle);
+    const ly = (R + 16) * Math.sin(angle);
     gRadar.append('text')
       .attr('x', lx).attr('y', ly)
       .attr('text-anchor', 'middle')
       .attr('dominant-baseline', 'central')
-      .attr('fill', '#a3a3a3')
-      .attr('font-size', '0.5625rem')
+      .attr('fill', '#e5e5e5')
+      .attr('font-size', '13px')
+      .attr('font-weight', '600')
       .attr('font-family', 'JetBrains Mono, monospace')
       .text(d.group);
-    const nlx = (R + 32) * Math.cos(angle);
-    const nly = (R + 32) * Math.sin(angle);
+
+    // Group name label
+    const nlx = (R + 34) * Math.cos(angle);
+    const nly = (R + 34) * Math.sin(angle);
     gRadar.append('text')
       .attr('x', nlx).attr('y', nly)
       .attr('text-anchor', 'middle')
       .attr('dominant-baseline', 'central')
-      .attr('fill', '#6b6b6b')
-      .attr('font-size', '0.4375rem')
+      .attr('fill', '#737373')
+      .attr('font-size', '9px')
       .attr('font-family', 'JetBrains Mono, monospace')
-      .text(d.label.length > 12 ? d.label.slice(0, 12) + '..' : d.label);
+      .text(d.label.length > 14 ? d.label.slice(0, 14) + '..' : d.label);
+
+    // Value label near dot
+    const v = (d.value !== null && d.value !== undefined) ? d.value : null;
+    if (v !== null) {{
+      const vx = (R * v + 10) * Math.cos(angle);
+      const vy = (R * v + 10) * Math.sin(angle);
+      gRadar.append('text')
+        .attr('x', vx).attr('y', vy)
+        .attr('text-anchor', 'middle')
+        .attr('dominant-baseline', 'central')
+        .attr('fill', riskBarColor(v))
+        .attr('font-size', '9px')
+        .attr('font-weight', '600')
+        .attr('font-family', 'JetBrains Mono, monospace')
+        .text(Math.round(v * 100) + '%');
+    }}
   }});
 
-  // Data area
+  // Data area polygon
   const valuePts = [];
   data.forEach((d, i) => {{
-    const v = (d.value !== null && d.value !== undefined) ? d.value : 0;
+    const v = (d.value !== null && d.value !== undefined) ? Math.min(1, Math.max(0, d.value)) : 0;
     const angle = angleSlice * i - Math.PI / 2;
     valuePts.push([R * v * Math.cos(angle), R * v * Math.sin(angle)]);
   }});
   gRadar.append('polygon')
     .attr('points', valuePts.map(p => p.join(',')).join(' '))
-    .attr('fill', 'rgba(251,146,60,0.15)')
+    .attr('fill', 'rgba(251,146,60,0.12)')
     .attr('stroke', '#fb923c')
-    .attr('stroke-width', 1.5);
+    .attr('stroke-width', 2);
 
   // Dots on vertices
   valuePts.forEach((p, i) => {{
@@ -1194,8 +1290,10 @@ function switchTab(tabId) {{
     if (v !== null && v !== undefined) {{
       gRadar.append('circle')
         .attr('cx', p[0]).attr('cy', p[1])
-        .attr('r', 3)
-        .attr('fill', '#fb923c');
+        .attr('r', 4)
+        .attr('fill', '#fb923c')
+        .attr('stroke', '#000')
+        .attr('stroke-width', 1.5);
     }}
   }});
 }})();
@@ -1506,11 +1604,13 @@ function showDetail(d) {{
     const metricInfo = GRAPH_DATA.all_metrics[currentOverlay];
     if (metricInfo) {{
       const nodeVal = overlayData ? overlayData[d.id] : undefined;
+      const oRange = overlayMax - overlayMin || 1;
+      const normVal = nodeVal !== undefined ? (nodeVal - overlayMin) / oRange : undefined;
       html += `
         <div class="detail-field">
           <div class="detail-field-label">Оверлей: ${{escapeHtml(currentOverlay)}} — ${{escapeHtml(metricInfo.name)}}</div>
-          <div class="detail-field-value" style="color:${{nodeVal !== undefined ? riskColor(nodeVal) : 'var(--text-tertiary)'}}">
-            ${{nodeVal !== undefined ? (nodeVal * 100).toFixed(1) + '%' : 'нет данных'}}
+          <div class="detail-field-value" style="color:${{normVal !== undefined ? riskColor(normVal) : 'var(--text-tertiary)'}}">
+            ${{nodeVal !== undefined ? nodeVal.toFixed(2) : 'нет данных'}}
           </div>
         </div>
         <div class="detail-field">
@@ -1564,6 +1664,8 @@ function setMetricOverlay(metricId) {{
     const oMin = Math.min(...vals);
     const oMax = Math.max(...vals);
     const oRange = oMax - oMin || 1;
+    overlayMin = oMin;
+    overlayMax = oMax;
     function normalize(v) {{ return (v - oMin) / oRange; }}
 
     nodes.transition(t)
@@ -1747,7 +1849,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Ошибка разбора JSON: {exc}", file=sys.stderr)
         return 1
 
-    graph_data = _build_graph_data(data)
+    graph_data = _build_graph_data(data, max_graph_nodes=args.max_graph_nodes)
     html = _render_html(graph_data)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
