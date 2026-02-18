@@ -145,21 +145,20 @@ def _classify_nodes(
 
 
 _METRIC_META: dict[str, dict[str, str]] = {
-    "A1": {"name": "ASE", "title": "Открытость поверхности атаки", "group": "A", "score_key": "ASE"},
-    "A2": {"name": "ECI", "title": "Индекс взрывной сложности", "group": "A", "score_key": "ECI_avg"},
-    "A3": {"name": "IET", "title": "Входная энтропия", "group": "A", "score_key": "IET_system"},
-    "B1": {"name": "IDS", "title": "Глубина эшелонированной защиты", "group": "B", "score_key": "IDS"},
-    "B2": {"name": "PPI", "title": "Индекс близости к привилегиям", "group": "B", "score_key": "PPI"},
-    "B3": {"name": "MPSP", "title": "Паритет защиты по путям", "group": "B", "score_key": "MPSP"},
-    "B4": {"name": "FSS", "title": "Оценка безопасного отказа", "group": "B", "score_key": "FSS"},
-    "C1": {"name": "TPC", "title": "Сложность пути заражённых данных", "group": "C", "score_key": "TPC"},
-    "C2": {"name": "ETI", "title": "Индекс прозрачности ошибок", "group": "C", "score_key": "ETI"},
-    "C3": {"name": "SFA", "title": "Анализ потоков секретов", "group": "C", "score_key": "SFA"},
-    "D1": {"name": "PAD", "title": "Дрейф атак на стыках технологий", "group": "D", "score_key": "PAD"},
-    "D2": {"name": "TCPD", "title": "Глубина цепочки доверия", "group": "D", "score_key": "TCPD"},
-    "E1": {"name": "OSDR", "title": "Риск зависимостей с открытым кодом", "group": "E", "score_key": "OSDR"},
-    "F1": {"name": "VFCP", "title": "Предиктор сложности исправления", "group": "F", "score_key": "VFCP"},
-    "F2": {"name": "SRP", "title": "Вероятность регрессии безопасности", "group": "F", "score_key": "SRP"},
+    "A1": {"name": "ASE", "title": "Открытость поверхности атаки", "group": "A", "score_key": "ASE", "hint": "Доля точек входа без аутентификации или валидации"},
+    "A2": {"name": "ECI", "title": "Индекс взрывной сложности", "group": "A", "score_key": "ECI_avg", "hint": "Цикломатическая сложность методов, достижимых из точек входа"},
+    "A3": {"name": "IET", "title": "Входная энтропия", "group": "A", "score_key": "IET_system", "hint": "Разнообразие типов и протоколов точек входа"},
+    "B1": {"name": "IDS", "title": "Глубина эшелонированной защиты", "group": "B", "score_key": "IDS", "hint": "Есть ли несколько уровней проверок на пути к данным"},
+    "B2": {"name": "PPI", "title": "Индекс близости к привилегиям", "group": "B", "score_key": "PPI", "hint": "Насколько легко добраться от входа до привилегированного кода"},
+    "B3": {"name": "MPSP", "title": "Паритет защиты по путям", "group": "B", "score_key": "MPSP", "hint": "Равномерность защиты по всем путям выполнения"},
+    "B4": {"name": "FSS", "title": "Оценка безопасного отказа", "group": "B", "score_key": "FSS", "hint": "Как ведёт себя система при ошибке: безопасно или нет"},
+    "C1": {"name": "TPC", "title": "Сложность пути заражённых данных", "group": "C", "score_key": "TPC", "hint": "Длина и разветвлённость путей от входа до потребителей"},
+    "C2": {"name": "ETI", "title": "Индекс прозрачности ошибок", "group": "C", "score_key": "ETI", "hint": "Утекает ли внутренняя информация в сообщениях об ошибках"},
+    "C3": {"name": "SFA", "title": "Анализ потоков секретов", "group": "C", "score_key": "SFA", "hint": "Проходят ли секреты (пароли, токены) через небезопасные пути"},
+    "D1": {"name": "PAD", "title": "Дрейф атак на стыках технологий", "group": "D", "score_key": "PAD", "hint": "Риски на границах разных языков или фреймворков"},
+    "D2": {"name": "TCPD", "title": "Глубина цепочки доверия", "group": "D", "score_key": "TCPD", "hint": "Сколько уровней посредников между входом и данными"},
+    "F1": {"name": "VFCP", "title": "Предиктор сложности исправления", "group": "F", "score_key": "VFCP", "hint": "Насколько сложно будет исправить уязвимость в этом коде"},
+    "F2": {"name": "SRP", "title": "Вероятность регрессии безопасности", "group": "F", "score_key": "SRP", "hint": "Риск того, что изменение кода сломает существующую защиту"},
 }
 
 _GROUP_NAMES: dict[str, str] = {
@@ -167,7 +166,6 @@ _GROUP_NAMES: dict[str, str] = {
     "B": "Глубина защиты",
     "C": "Потоки данных",
     "D": "Технологические границы",
-    "E": "Зависимости",
     "F": "Изменяемость",
 }
 
@@ -284,6 +282,7 @@ def _build_graph_data(data: dict[str, Any], *, max_graph_nodes: int = 500) -> di
             "id": mid,
             "name": meta_info["name"],
             "title": meta_info["title"],
+            "hint": meta_info.get("hint", ""),
             "group": meta_info["group"],
             "status": block.get("status", "not_available"),
             "value": round(value, 4) if value is not None else None,
@@ -328,7 +327,7 @@ def _build_graph_data(data: dict[str, Any], *, max_graph_nodes: int = 500) -> di
             group_values.setdefault(info["group"], []).append(info["value"])
 
     radar_data: list[dict[str, Any]] = []
-    for gid in ("A", "B", "C", "D", "E", "F"):
+    for gid in ("A", "B", "C", "D", "F"):
         vals = group_values.get(gid, [])
         avg = round(min(1.0, max(0.0, sum(vals) / len(vals))), 4) if vals else None
         radar_data.append({"group": gid, "label": _GROUP_NAMES[gid], "value": avg})
@@ -453,7 +452,7 @@ html, body {{
   flex-wrap: wrap;
 }}
 .hud-panel-title {{
-  font-size: 0.8125rem;
+  font-size: 0.9375rem;
   font-weight: 600;
   color: var(--text-primary);
   letter-spacing: 0.05em;
@@ -503,12 +502,12 @@ html, body {{
   flex: 1;
   background: var(--surface-1);
   border-right: 1px solid var(--border);
-  padding: 0.75rem 1rem;
+  padding: 1rem 1.25rem;
   min-width: 0;
 }}
 .stat-card:last-child {{ border-right: none; }}
 .stat-label {{
-  font-size: 0.5625rem;
+  font-size: 0.6875rem;
   font-weight: 500;
   color: var(--text-tertiary);
   text-transform: uppercase;
@@ -519,7 +518,7 @@ html, body {{
   text-overflow: ellipsis;
 }}
 .stat-value {{
-  font-size: 1.5rem;
+  font-size: 1.75rem;
   font-weight: 700;
   color: var(--text-primary);
   line-height: 1;
@@ -576,7 +575,7 @@ html, body {{
    Dashboard Content
    ====================================================================== */
 .dashboard-content {{
-  padding: 1.5rem 2rem;
+  padding: 2rem 2.5rem;
   overflow-y: auto;
   flex: 1;
 }}
@@ -591,14 +590,14 @@ html, body {{
 
 /* Metric Cards Grid */
 .metrics-grid {{
-  max-width: 960px;
+  max-width: 1100px;
   margin: 0 auto;
 }}
 .metrics-group {{
   margin-bottom: 1.5rem;
 }}
 .metrics-group-header {{
-  font-size: 0.6875rem;
+  font-size: 0.8125rem;
   font-weight: 600;
   color: var(--text-secondary);
   text-transform: uppercase;
@@ -614,11 +613,11 @@ html, body {{
 }}
 .metric-card {{
   position: relative;
-  flex: 1 1 180px;
-  max-width: 220px;
+  flex: 1 1 200px;
+  max-width: 260px;
   background: var(--surface-2);
   border: 1px solid var(--border);
-  padding: 0.75rem 0.875rem;
+  padding: 1rem 1.125rem;
   cursor: pointer;
   transition: border-color 0.2s, background 0.2s;
 }}
@@ -632,7 +631,7 @@ html, body {{
   pointer-events: none;
 }}
 .metric-card-id {{
-  font-size: 0.5625rem;
+  font-size: 0.6875rem;
   font-weight: 600;
   color: var(--text-tertiary);
   text-transform: uppercase;
@@ -640,19 +639,26 @@ html, body {{
   margin-bottom: 0.25rem;
 }}
 .metric-card-name {{
-  font-size: 0.75rem;
+  font-size: 0.875rem;
   font-weight: 500;
   color: var(--text-primary);
   margin-bottom: 0.125rem;
 }}
 .metric-card-title {{
-  font-size: 0.625rem;
+  font-size: 0.75rem;
   color: var(--text-tertiary);
   margin-bottom: 0.5rem;
   line-height: 1.3;
 }}
+.metric-card-hint {{
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  line-height: 1.35;
+  margin-bottom: 0.5rem;
+  opacity: 0.7;
+}}
 .metric-card-value {{
-  font-size: 1rem;
+  font-size: 1.25rem;
   font-weight: 700;
   color: var(--text-primary);
   margin-bottom: 0.35rem;
@@ -990,19 +996,19 @@ html, body {{
     <div class="stat-card">
       <span class="dot-corner tl"></span><span class="dot-corner tr"></span>
       <span class="dot-corner bl"></span><span class="dot-corner br"></span>
-      <div class="stat-label">Точки входа</div>
+      <div class="stat-label" title="HTTP-эндпоинты и другие публичные методы, доступные извне">Точки входа</div>
       <div class="stat-value accent">{summary["entrypoints"]}</div>
     </div>
     <div class="stat-card">
       <span class="dot-corner tl"></span><span class="dot-corner tr"></span>
       <span class="dot-corner bl"></span><span class="dot-corner br"></span>
-      <div class="stat-label">Стоки</div>
+      <div class="stat-label" title="Приёмники данных — методы, записывающие данные: БД, API, файлы и т.д.">Приёмники</div>
       <div class="stat-value danger">{summary["sinks"]}</div>
     </div>
     <div class="stat-card">
       <span class="dot-corner tl"></span><span class="dot-corner tr"></span>
       <span class="dot-corner bl"></span><span class="dot-corner br"></span>
-      <div class="stat-label">Совокупная оценка</div>
+      <div class="stat-label" title="Средневзвешенный уровень безопасности: 0% — максимальная защищённость, 100% — максимальный риск">Общая оценка</div>
       <div class="stat-value accent">{score_pct}<span style="font-size:0.875rem;font-weight:400;color:var(--text-tertiary)">%</span></div>
       <div class="progress-bar">
         <div class="progress-fill" style="width:{score_pct}%"></div>
@@ -1022,7 +1028,7 @@ html, body {{
   <div id="tab-dashboard" class="tab-content active" data-tab-type="dashboard">
     <div class="dashboard-content">
       <div class="radar-container">
-        <svg id="radar-svg" width="400" height="400"></svg>
+        <svg id="radar-svg" width="500" height="500"></svg>
       </div>
       <div class="metrics-grid" id="metrics-cards"></div>
     </div>
@@ -1038,20 +1044,20 @@ html, body {{
       <span class="toolbar-label">Фильтр:</span>
       <button class="btn-clipped active" data-filter="all" onclick="setFilter('all')">Все</button>
       <button class="btn-clipped" data-filter="entrypoints" onclick="setFilter('entrypoints')">Точки входа</button>
-      <button class="btn-clipped" data-filter="sinks" onclick="setFilter('sinks')">Стоки</button>
+      <button class="btn-clipped" data-filter="sinks" onclick="setFilter('sinks')">Приёмники</button>
       <button class="btn-clipped" data-filter="hide-tests" onclick="setFilter('hide-tests')">Скрыть тесты</button>
 
       <div class="toolbar-separator"></div>
 
-      <span class="toolbar-label">Оверлей:</span>
+      <span class="toolbar-label">Подсветка:</span>
       <select id="metric-overlay-select" class="metric-select" onchange="setMetricOverlay(this.value)">
-        <option value="topology">Топология</option>
+        <option value="topology">По типу узла</option>
       </select>
       <span class="overlay-info" id="overlay-info"></span>
 
       <div class="legend">
         <div class="legend-item"><div class="legend-dot" style="background:#fb923c"></div>Точка входа</div>
-        <div class="legend-item"><div class="legend-dot" style="background:#f87171"></div>Сток</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#f87171"></div>Приёмник</div>
         <div class="legend-item"><div class="legend-dot" style="background:#6b6b6b"></div>Метод</div>
         <div class="legend-item"><div class="legend-dot" style="background:#6b6b6b;opacity:0.3"></div>Тест</div>
       </div>
@@ -1096,7 +1102,6 @@ const GROUP_NAMES = {{
   B: 'Глубина защиты',
   C: 'Потоки данных',
   D: 'Технологические границы',
-  E: 'Зависимости',
   F: 'Изменяемость',
 }};
 
@@ -1167,10 +1172,11 @@ function switchTab(tabId) {{
 (function populateOverlaySelect() {{
   const sel = document.getElementById('metric-overlay-select');
   const metricsMap = GRAPH_DATA.all_metrics;
+  const overlays = GRAPH_DATA.metric_overlays;
   const ids = Object.keys(metricsMap).sort();
   ids.forEach(mid => {{
     const m = metricsMap[mid];
-    if (m.status === 'ok') {{
+    if (m.status === 'ok' && overlays[mid]) {{
       const opt = document.createElement('option');
       opt.value = mid;
       opt.textContent = mid + ' — ' + m.name;
@@ -1184,9 +1190,9 @@ function switchTab(tabId) {{
 // =========================================================================
 (function buildRadar() {{
   const radarSvg = d3.select('#radar-svg');
-  const W = 400, H = 400;
+  const W = 500, H = 500;
   const cx = W / 2, cy = H / 2;
-  const R = 140;
+  const R = 170;
   const data = GRAPH_DATA.radar;
   const n = data.length;
   const angleSlice = (2 * Math.PI) / n;
@@ -1230,8 +1236,8 @@ function switchTab(tabId) {{
       .attr('stroke-width', 1);
 
     // Group letter label
-    const lx = (R + 16) * Math.cos(angle);
-    const ly = (R + 16) * Math.sin(angle);
+    const lx = (R + 20) * Math.cos(angle);
+    const ly = (R + 20) * Math.sin(angle);
     gRadar.append('text')
       .attr('x', lx).attr('y', ly)
       .attr('text-anchor', 'middle')
@@ -1243,8 +1249,8 @@ function switchTab(tabId) {{
       .text(d.group);
 
     // Group name label
-    const nlx = (R + 34) * Math.cos(angle);
-    const nly = (R + 34) * Math.sin(angle);
+    const nlx = (R + 38) * Math.cos(angle);
+    const nly = (R + 38) * Math.sin(angle);
     gRadar.append('text')
       .attr('x', nlx).attr('y', nly)
       .attr('text-anchor', 'middle')
@@ -1252,7 +1258,7 @@ function switchTab(tabId) {{
       .attr('fill', '#737373')
       .attr('font-size', '9px')
       .attr('font-family', 'JetBrains Mono, monospace')
-      .text(d.label.length > 14 ? d.label.slice(0, 14) + '..' : d.label);
+      .text(d.label);
 
     // Value label near dot
     const v = (d.value !== null && d.value !== undefined) ? d.value : null;
@@ -1308,7 +1314,7 @@ function switchTab(tabId) {{
     if (!groups[m.group]) groups[m.group] = [];
     groups[m.group].push(m);
   }});
-  const groupOrder = ['A', 'B', 'C', 'D', 'E', 'F'];
+  const groupOrder = ['A', 'B', 'C', 'D', 'F'];
   groupOrder.forEach(gid => {{
     const items = groups[gid];
     if (!items) return;
@@ -1323,7 +1329,7 @@ function switchTab(tabId) {{
     items.forEach(m => {{
       const card = document.createElement('div');
       card.className = 'metric-card' + (m.status !== 'ok' ? ' disabled' : '');
-      if (m.status === 'ok') {{
+      if (m.status === 'ok' && GRAPH_DATA.metric_overlays[m.id]) {{
         card.onclick = function() {{
           switchTab('graph');
           setMetricOverlay(m.id);
@@ -1336,6 +1342,7 @@ function switchTab(tabId) {{
         '<div class="metric-card-id">' + escapeHtml(m.id) + '</div>' +
         '<div class="metric-card-name">' + escapeHtml(m.name) + '</div>' +
         '<div class="metric-card-title">' + escapeHtml(m.title) + '</div>' +
+        '<div class="metric-card-hint">' + escapeHtml(m.hint || '') + '</div>' +
         '<div class="metric-card-value">' + (m.value !== null ? pct + '%' : 'N/A') + '</div>' +
         '<div class="metric-progress"><div class="metric-progress-fill" style="width:' +
         pct + '%;background:' + (m.value !== null ? riskBarColor(val) : '#333') + '"></div></div>';
@@ -1547,7 +1554,7 @@ function showDetail(d) {{
 
   const typeLabels = {{
     entrypoint: '<span class="badge accent">Точка входа</span>',
-    sink: '<span class="badge danger">Сток</span>',
+    sink: '<span class="badge danger">Приёмник данных</span>',
     test: '<span class="badge warning">Тест</span>',
     regular: '<span class="badge">Метод</span>',
   }};
