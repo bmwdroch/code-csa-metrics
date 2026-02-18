@@ -247,9 +247,14 @@ def main() -> int:
         ensure_dir(m2)
         docker_run_cmd += ["-v", f"{m2}:/root/.m2"]
 
+    # DooD: Docker daemon ищет путь на ХОСТЕ, а не внутри контейнера.
+    # CSQA_HOST_OUT_DIR задаётся через docker-compose как хостовый аналог /app/out.
+    host_out_base = os.environ.get("CSQA_HOST_OUT_DIR")
+    docker_vol_src = Path(host_out_base) / out_dir.name if host_out_base else out_dir
+
     docker_run_cmd += [
         "-v",
-        f"{out_dir}:/out",
+        f"{docker_vol_src}:/out",
         image_tag,
         "--repo-url",
         args.repo_url,
