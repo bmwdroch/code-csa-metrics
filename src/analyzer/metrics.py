@@ -13,6 +13,11 @@ from typing import Iterable
 from analyzer.java_graph import JavaGraph, build_java_graph
 
 
+_DISABLED_METRICS: dict[str, str] = {
+    "E1": "disabled_by_policy",
+}
+
+
 def compute_all_metrics(
     repo_dir: Path,
     *,
@@ -45,6 +50,12 @@ def compute_all_metrics(
     # Compute each metric ID present in the spec, even if we can only return an approximation.
     ids_in_spec = [h["id"] for h in spec_headers]
     for metric_id in ids_in_spec:
+        if metric_id in _DISABLED_METRICS:
+            out[metric_id] = {
+                "status": "disabled",
+                "reason": _DISABLED_METRICS[metric_id],
+            }
+            continue
         if metric_id == "A1":
             out["A1"] = metric_A1_ASE(graph)
         elif metric_id == "A2":
@@ -69,8 +80,6 @@ def compute_all_metrics(
             out["D1"] = metric_D1_PAD(repo_dir)
         elif metric_id == "D2":
             out["D2"] = metric_D2_TCPD(graph, max_graph_depth=max_graph_depth)
-        elif metric_id == "E1":
-            out["E1"] = metric_E1_OSDR(repo_dir, mode=mode)
         elif metric_id == "F1":
             out["F1"] = metric_F1_VFCP(repo_dir, graph, mode=mode)
         elif metric_id == "F2":
@@ -178,7 +187,6 @@ _METRIC_WEIGHTS: dict[str, float] = {
     "C3": 0.08,
     "D1": 0.04,
     "D2": 0.06,
-    "E1": 0.06,
     "F1": 0.05,
     "F2": 0.05,
 }
@@ -197,7 +205,6 @@ _METRIC_SCORE_KEY: dict[str, str] = {
     "C3": "SFA",
     "D1": "PAD",
     "D2": "TCPD",
-    "E1": "OSDR",
     "F1": "VFCP",
     "F2": "SRP",
 }
@@ -348,9 +355,26 @@ def metric_B1_IDS(graph: JavaGraph | None, *, max_graph_depth: int) -> dict:
 def metric_B2_PPI(graph: JavaGraph | None, *, max_graph_depth: int) -> dict:
     if not graph:
         return _na(graph, "no_java_graph")
+    unauth_entrypoints = [ep for ep in graph.entrypoints if not ep.has_auth]
+    privileged_sinks = [s for s in graph.sinks if s.privileged]
+    if not unauth_entrypoints or not privileged_sinks:
+        return {
+            "status": "ok",
+            "PPI": 0.0,
+            "min_distance": None,
+            "notes": ["No unauthenticated entrypoints or privileged sinks detected."],
+        }
+
     min_dist = graph.min_distance_unauth_to_privileged(max_depth=max_graph_depth)
     if min_dist is None:
-        return {"status": "ok", "PPI": 0.0, "min_distance": None, "notes": ["No unauth->privileged path found (within depth)."]}
+        return {
+            "status": "not_available",
+            "reason": "no_path_within_max_depth",
+            "min_distance": None,
+            "entrypoints_unauth": len(unauth_entrypoints),
+            "sinks_privileged": len(privileged_sinks),
+            "notes": ["Unauthenticated entrypoints and privileged sinks exist, but no path was found within max_graph_depth."],
+        }
     return {"status": "ok", "PPI": 1.0 / (min_dist + 1), "min_distance": min_dist}
 
 
@@ -792,8 +816,7 @@ def _iter_java_test_files(repo_dir: Path) -> Iterable[Path]:
     ignore_dirs = {".git", "target", "build", ".gradle", ".idea"}
     for root, dirs, files in os.walk(repo_dir):
         dirs[:] = [d for d in dirs if d not in ignore_dirs]
-        parts = Path(root).parts
-        if "src" not in parts or "test" not in parts:
+        if not _is_test_path(Path(root)):
             continue
         for fn in files:
             if fn.endswith(".java"):

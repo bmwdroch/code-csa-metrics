@@ -390,9 +390,12 @@ def _build_graph_data(data: dict[str, Any], *, max_graph_nodes: int = 500) -> di
     all_nodes, all_edges = _trim_graph(
         raw_nodes, raw_edges, entrypoint_ids, sink_ids, max_graph_nodes,
     )
+    visible_nodes = set(all_nodes)
+    visible_entrypoint_ids = entrypoint_ids & visible_nodes
+    visible_sink_ids = sink_ids & visible_nodes
 
     # Классификация узлов
-    nodes = _classify_nodes(all_nodes, entrypoint_ids, sink_ids)
+    nodes = _classify_nodes(all_nodes, visible_entrypoint_ids, visible_sink_ids)
 
     # Рёбра
     edges = [{"source": e[0], "target": e[1]} for e in all_edges]
@@ -483,8 +486,8 @@ def _build_graph_data(data: dict[str, Any], *, max_graph_nodes: int = 500) -> di
         "summary": {
             "nodes": len(all_nodes),
             "edges": len(all_edges),
-            "entrypoints": len(entrypoint_ids),
-            "sinks": len(sink_ids),
+            "entrypoints": len(visible_entrypoint_ids),
+            "sinks": len(visible_sink_ids),
             "aggregate_score": aggregate_score,
         },
         "nodes": nodes,

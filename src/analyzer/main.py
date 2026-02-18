@@ -93,15 +93,16 @@ def main() -> int:
         "errors": [],
     }
 
-    # Load metric spec headers (sanity: ensure we report all IDs present in docs/metrics.md)
-    spec_path = Path("/app/spec/metrics.md")
-    spec_headers = load_metric_headers(spec_path)
-    report["spec"]["headers"] = spec_headers
-
     workdir = Path(args.workdir)
     repo_dir = workdir / "repo"
+    spec_headers: list[dict] = []
 
     try:
+        # Load metric spec headers (sanity: ensure we report all IDs present in docs/metrics.md).
+        spec_path = Path("/app/spec/metrics.md")
+        spec_headers = load_metric_headers(spec_path)
+        report["spec"]["headers"] = spec_headers
+
         with timings.step("clone"):
             clone_meta = git_clone(args.repo_url, args.ref, repo_dir, args.depth)
         report["meta"].update({"git_head": clone_meta["head"], "git_branch": clone_meta["branch"]})

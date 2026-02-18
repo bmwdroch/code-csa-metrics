@@ -222,14 +222,65 @@ def _method_calls(src: bytes, method_node) -> list[str]:
     return names
 
 
-def _class_name(src: bytes, root_node) -> str:
-    # Find first class/interface/enum name in file.
+def _class_kind_from_decl(src: bytes, decl_node) -> str:
+    if decl_node.type == "interface_declaration":
+        return "interface"
+    if decl_node.type in {"enum_declaration", "record_declaration"}:
+        return "concrete"
+    if decl_node.type == "class_declaration":
+        modifiers = decl_node.child_by_field_name("modifiers")
+        if modifiers and "abstract" in _node_text(src, modifiers).split():
+            return "abstract"
+        # Fallback for parser variants where modifiers are not exposed as field.
+        if "abstract" in _node_text(src, decl_node).split():
+            return "abstract"
+    return "concrete"
+
+
+def _collect_type_decls(src: bytes, root_node) -> list[dict]:
+    decls: list[dict] = []
     for typ in ("class_declaration", "interface_declaration", "enum_declaration", "record_declaration"):
         for n in _find_children(root_node, typ):
             name = _field_text(src, n, "name") or _extract_identifier(src, n)
-            if name:
-                return name
-    return "Unknown"
+            if not name:
+                continue
+            decls.append(
+                {
+                    "name": name,
+                    "start": n.start_byte,
+                    "end": n.end_byte,
+                    "kind": _class_kind_from_decl(src, n),
+                }
+            )
+    decls.sort(key=lambda d: (d["start"], -d["end"]))
+    return decls
+
+
+def _enclosing_type_for_method(method_node, type_decls: list[dict]) -> tuple[str, str]:
+    method_start = method_node.start_byte
+    method_end = method_node.end_byte
+    containers = [d for d in type_decls if d["start"] <= method_start and method_end <= d["end"]]
+    if not containers:
+        return "Unknown", "concrete"
+    containers.sort(key=lambda d: (d["start"], -d["end"]))
+    return ".".join(d["name"] for d in containers), containers[-1]["kind"]
+
+
+def _resolve_placeholder_edges(edges: dict[str, set[str]], method_defs_by_name: dict[str, list[str]]) -> dict[str, set[str]]:
+    resolved: dict[str, set[str]] = {}
+    for src, dsts in edges.items():
+        out = set()
+        for dst in dsts:
+            if dst.startswith("name:"):
+                name = dst.split(":", 1)[1]
+                # Prefer bounded expansion to avoid blow-ups.
+                cands = method_defs_by_name.get(name, [])
+                for mid in cands[:20]:
+                    out.add(mid)
+            else:
+                out.add(dst)
+        resolved[src] = out
+    return resolved
 
 
 def _package_name(src: bytes, root_node) -> str:
@@ -655,23 +706,14 @@ def build_java_graph(repo_dir: Path, *, max_files: int | None) -> JavaGraph:
         if root is None:
             continue
         pkg = _package_name(src, root)
-        cls = _class_name(src, root)
-
-        # Determine class kind (abstract/interface/etc.) roughly.
-        class_kind = "concrete"
-        for n in _find_children(root, "class_declaration"):
-            text = _node_text(src, n)
-            if "abstract" in text.split():
-                class_kind = "abstract"
-                break
-        if _find_children(root, "interface_declaration"):
-            class_kind = "interface"
+        type_decls = _collect_type_decls(src, root)
 
         # methods
         for m in _find_children(root, "method_declaration"):
             name = _field_text(src, m, "name") or _extract_identifier(src, m)
             if not name:
                 continue
+            cls, class_kind = _enclosing_type_for_method(m, type_decls)
             # Build method id
             params = _extract_param_types(src, m)
             sig = ",".join(p.strip() for p in params)
@@ -712,12 +754,13 @@ def build_java_graph(repo_dir: Path, *, max_files: int | None) -> JavaGraph:
             method_flags[mid] = flags
 
             # security constructs for SRP
+            symbol = cls.rsplit(".", 1)[-1]
             if flags["authz"]:
-                security_constructs.append({"kind": "authz", "symbol": cls})
+                security_constructs.append({"kind": "authz", "symbol": symbol})
             if flags["validation"]:
-                security_constructs.append({"kind": "validation", "symbol": cls})
+                security_constructs.append({"kind": "validation", "symbol": symbol})
             if flags["sanitize"]:
-                security_constructs.append({"kind": "sanitize", "symbol": cls})
+                security_constructs.append({"kind": "sanitize", "symbol": symbol})
 
             # complexity + calls
             method_complexity[mid] = _method_complexity(src, m)
@@ -746,20 +789,7 @@ def build_java_graph(repo_dir: Path, *, max_files: int | None) -> JavaGraph:
             method_defs_by_name.setdefault(name, []).append(mid)
 
     # Resolve placeholder edges "name:foo" into method ids (approx).
-    resolved: dict[str, set[str]] = {}
-    for src, dsts in edges.items():
-        out = set()
-        for dst in dsts:
-            if dst.startswith("name:"):
-                name = dst.split(":", 1)[1]
-                # Prefer bounded expansion to avoid blow-ups.
-                cands = method_defs_by_name.get(name, [])
-                for mid in cands[:20]:
-                    if mid != src:
-                        out.add(mid)
-            else:
-                out.add(dst)
-        resolved[src] = out
+    resolved = _resolve_placeholder_edges(edges, method_defs_by_name)
 
     return JavaGraph(
         edges=resolved,
