@@ -145,20 +145,133 @@ def _classify_nodes(
 
 
 _METRIC_META: dict[str, dict[str, str]] = {
-    "A1": {"name": "ASE", "title": "Открытость поверхности атаки", "group": "A", "score_key": "ASE", "hint": "Доля точек входа без аутентификации или валидации"},
-    "A2": {"name": "ECI", "title": "Индекс взрывной сложности", "group": "A", "score_key": "ECI_avg", "hint": "Цикломатическая сложность методов, достижимых из точек входа"},
-    "A3": {"name": "IET", "title": "Входная энтропия", "group": "A", "score_key": "IET_system", "hint": "Разнообразие типов и протоколов точек входа"},
-    "B1": {"name": "IDS", "title": "Глубина эшелонированной защиты", "group": "B", "score_key": "IDS", "hint": "Есть ли несколько уровней проверок на пути к данным"},
-    "B2": {"name": "PPI", "title": "Индекс близости к привилегиям", "group": "B", "score_key": "PPI", "hint": "Насколько легко добраться от входа до привилегированного кода"},
-    "B3": {"name": "MPSP", "title": "Паритет защиты по путям", "group": "B", "score_key": "MPSP", "hint": "Равномерность защиты по всем путям выполнения"},
-    "B4": {"name": "FSS", "title": "Оценка безопасного отказа", "group": "B", "score_key": "FSS", "hint": "Как ведёт себя система при ошибке: безопасно или нет"},
-    "C1": {"name": "TPC", "title": "Сложность пути заражённых данных", "group": "C", "score_key": "TPC", "hint": "Длина и разветвлённость путей от входа до потребителей"},
-    "C2": {"name": "ETI", "title": "Индекс прозрачности ошибок", "group": "C", "score_key": "ETI", "hint": "Утекает ли внутренняя информация в сообщениях об ошибках"},
-    "C3": {"name": "SFA", "title": "Анализ потоков секретов", "group": "C", "score_key": "SFA", "hint": "Проходят ли секреты (пароли, токены) через небезопасные пути"},
-    "D1": {"name": "PAD", "title": "Дрейф атак на стыках технологий", "group": "D", "score_key": "PAD", "hint": "Риски на границах разных языков или фреймворков"},
-    "D2": {"name": "TCPD", "title": "Глубина цепочки доверия", "group": "D", "score_key": "TCPD", "hint": "Сколько уровней посредников между входом и данными"},
-    "F1": {"name": "VFCP", "title": "Предиктор сложности исправления", "group": "F", "score_key": "VFCP", "hint": "Насколько сложно будет исправить уязвимость в этом коде"},
-    "F2": {"name": "SRP", "title": "Вероятность регрессии безопасности", "group": "F", "score_key": "SRP", "hint": "Риск того, что изменение кода сломает существующую защиту"},
+    "A1": {
+        "name": "ASE", "title": "Открытость поверхности атаки",
+        "group": "A", "score_key": "ASE",
+        "hint": "Доля точек входа без аутентификации или валидации",
+        "detail": "Считает, какая часть HTTP-эндпоинтов и публичных методов "
+                  "не защищена аутентификацией или входной валидацией. "
+                  "Чем выше значение, тем больше незащищённых входов в систему. "
+                  "На узле показывается оценка конкретной точки входа: учитываются "
+                  "наличие аннотаций безопасности, фильтров и проверок параметров.",
+    },
+    "A2": {
+        "name": "ECI", "title": "Индекс взрывной сложности",
+        "group": "A", "score_key": "ECI_avg",
+        "hint": "Цикломатическая сложность методов, достижимых из точек входа",
+        "detail": "Оценивает цикломатическую сложность методов, вызываемых из точек входа, "
+                  "с учётом расстояния в графе вызовов. Сложный код, доступный "
+                  "извне, — основной источник уязвимостей. На узле показывается "
+                  "ECI конкретного метода: произведение его сложности на близость к входу.",
+    },
+    "A3": {
+        "name": "IET", "title": "Входная энтропия",
+        "group": "A", "score_key": "IET_system",
+        "hint": "Разнообразие типов и протоколов точек входа",
+        "detail": "Измеряет энтропию (разнообразие) типов точек входа: HTTP, gRPC, "
+                  "очереди, CLI и т.д. Высокая энтропия означает больше протоколов, "
+                  "каждый со своей моделью угроз. На узле — энтропия конкретной "
+                  "точки входа, взвешенная по её типу.",
+    },
+    "B1": {
+        "name": "IDS", "title": "Глубина эшелонированной защиты",
+        "group": "B", "score_key": "IDS",
+        "hint": "Есть ли несколько уровней проверок на пути к данным",
+        "detail": "Проверяет, сколько независимых уровней защиты (аутентификация, "
+                  "авторизация, валидация, санитизация) встречается на пути от входа "
+                  "до приёмника. Низкое значение — хорошо: защита глубокая. "
+                  "Высокое — один уровень или его отсутствие.",
+    },
+    "B2": {
+        "name": "PPI", "title": "Индекс близости к привилегиям",
+        "group": "B", "score_key": "PPI",
+        "hint": "Насколько легко добраться от входа до привилегированного кода",
+        "detail": "Измеряет минимальное расстояние в графе вызовов от публичного "
+                  "эндпоинта до привилегированных операций (запись в БД, отправка "
+                  "команд, управление пользователями). Чем ближе — тем выше риск. "
+                  "Высокое значение означает, что привилегированный код легко достижим.",
+    },
+    "B3": {
+        "name": "MPSP", "title": "Паритет защиты по путям",
+        "group": "B", "score_key": "MPSP",
+        "hint": "Равномерность защиты по всем путям выполнения",
+        "detail": "Сравнивает уровень защиты на разных путях выполнения от входа "
+                  "до приёмника. Если один путь защищён, а другой нет — это обход. "
+                  "Низкое значение — все пути защищены одинаково. "
+                  "Высокое — есть слабо защищённые обходные маршруты.",
+    },
+    "B4": {
+        "name": "FSS", "title": "Оценка безопасного отказа",
+        "group": "B", "score_key": "FSS",
+        "hint": "Как ведёт себя система при ошибке: безопасно или нет",
+        "detail": "Анализирует обработку исключений и ошибок: блокирует ли система "
+                  "доступ при сбое (fail-secure) или открывает (fail-open). "
+                  "Проверяет наличие catch-блоков на критических путях и поведение "
+                  "при таймаутах. Низкое — безопасный отказ, высокое — рискованный.",
+    },
+    "C1": {
+        "name": "TPC", "title": "Сложность пути заражённых данных",
+        "group": "C", "score_key": "TPC",
+        "hint": "Длина и разветвлённость путей от входа до потребителей",
+        "detail": "Оценивает длину и число ветвлений на пути пользовательских "
+                  "данных от точки входа до приёмника (БД, API, файл). Длинные "
+                  "и ветвистые пути сложнее контролировать. Также учитывается "
+                  "число последовательных переходов без санитизации.",
+    },
+    "C2": {
+        "name": "ETI", "title": "Индекс прозрачности ошибок",
+        "group": "C", "score_key": "ETI",
+        "hint": "Утекает ли внутренняя информация в сообщениях об ошибках",
+        "detail": "Проверяет, раскрывают ли обработчики ошибок внутреннюю структуру "
+                  "системы: стектрейсы, имена таблиц, пути файлов, версии библиотек. "
+                  "Такая информация помогает атакующему. "
+                  "Низкое — ошибки скрыты, высокое — утечка деталей.",
+    },
+    "C3": {
+        "name": "SFA", "title": "Анализ потоков секретов",
+        "group": "C", "score_key": "SFA",
+        "hint": "Проходят ли секреты (пароли, токены) через небезопасные пути",
+        "detail": "Отслеживает потоки секретных данных (пароли, API-ключи, токены) "
+                  "через граф вызовов. Проверяет, попадают ли они в логи, "
+                  "ответы клиенту или незашифрованные хранилища. "
+                  "Низкое — секреты изолированы, высокое — возможна утечка.",
+    },
+    "D1": {
+        "name": "PAD", "title": "Дрейф атак на стыках технологий",
+        "group": "D", "score_key": "PAD",
+        "hint": "Риски на границах разных языков или фреймворков",
+        "detail": "Оценивает риски при переходе данных между разными технологиями: "
+                  "Java → SQL, Java → HTML, REST → gRPC. На каждой границе возможна "
+                  "потеря контекста безопасности и новые классы атак (SQLi, XSS). "
+                  "Низкое — однородный стек, высокое — много технологических границ.",
+    },
+    "D2": {
+        "name": "TCPD", "title": "Глубина цепочки доверия",
+        "group": "D", "score_key": "TCPD",
+        "hint": "Сколько уровней посредников между входом и данными",
+        "detail": "Подсчитывает число доверительных переходов: прокси, middleware, "
+                  "сервисы, которые ретранслируют запрос без собственной проверки. "
+                  "Каждый посредник — точка, где проверки могут быть пропущены. "
+                  "Низкое — короткая цепочка, высокое — длинная с рисками.",
+    },
+    "F1": {
+        "name": "VFCP", "title": "Предиктор сложности исправления",
+        "group": "F", "score_key": "VFCP",
+        "hint": "Насколько сложно будет исправить уязвимость в этом коде",
+        "detail": "Оценивает, насколько трудоёмко исправление уязвимости: "
+                  "связность кода, число зависимых модулей, глубина вложенности. "
+                  "Сложный для исправления код остаётся уязвимым дольше. "
+                  "Низкое — легко исправить, высокое — потребует масштабного рефакторинга.",
+    },
+    "F2": {
+        "name": "SRP", "title": "Вероятность регрессии безопасности",
+        "group": "F", "score_key": "SRP",
+        "hint": "Риск того, что изменение кода сломает существующую защиту",
+        "detail": "Измеряет, насколько вероятно, что изменение в одном месте "
+                  "сломает защиту в другом: общие утилиты безопасности, "
+                  "глобальные фильтры, разделяемые конфигурации. "
+                  "Низкое — изолированная защита, высокое — хрупкие зависимости.",
+    },
 }
 
 _GROUP_NAMES: dict[str, str] = {
@@ -298,6 +411,7 @@ def _build_graph_data(data: dict[str, Any], *, max_graph_nodes: int = 500) -> di
             "name": meta_info["name"],
             "title": meta_info["title"],
             "hint": meta_info.get("hint", ""),
+            "detail": meta_info.get("detail", ""),
             "group": meta_info["group"],
             "status": block.get("status", "not_available"),
             "value": round(value, 4) if value is not None else None,
@@ -683,6 +797,34 @@ html, body {{
   margin-bottom: 0.5rem;
   opacity: 0.7;
 }}
+.detail-metric-info {{
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+}}
+.detail-metric-header {{
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}}
+.detail-metric-id {{
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--accent);
+}}
+.detail-metric-name {{
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}}
+.detail-metric-desc {{
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  line-height: 1.45;
+  margin-top: 0.25rem;
+}}
 .metric-card-value {{
   font-size: 1.25rem;
   font-weight: 700;
@@ -995,7 +1137,7 @@ html, body {{
     <span class="dot-corner bl"></span>
     <span class="dot-corner br"></span>
     <div class="hud-panel-header">
-      <div class="hud-panel-title">CSA &middot; SECURITY REPORT</div>
+      <div class="hud-panel-title">CSA &middot; CODE QUALITY-SECURITY REPORT</div>
       <div class="hud-panel-meta">
         <span>repo: <b>{_escape_html(meta["repo_name"])}</b></span>
         <span>mode: <b>{_escape_html(meta["mode"])}</b></span>
@@ -1617,22 +1759,25 @@ function showDetail(d) {{
   // A1 entrypoint details
   const ep = GRAPH_DATA.entrypoint_details[d.id];
   if (ep) {{
+    const a1Info = GRAPH_DATA.all_metrics['A1'];
     html += `
-      <div class="detail-field">
-        <div class="detail-field-label">Безопасность (A1)</div>
-        <div class="detail-field-value">
+      <div class="detail-metric-info">
+        <div class="detail-metric-header">
+          <span class="detail-metric-id">A1</span>
+          <span class="detail-metric-name">${{escapeHtml(a1Info ? a1Info.title : 'ASE')}}</span>
+        </div>
+        <div class="detail-field-value" style="margin-bottom:0.5rem">
           <span class="badge ${{ep.has_auth ? 'success' : 'danger'}}">${{ep.has_auth ? 'auth: да' : 'auth: нет'}}</span>
           <span class="badge ${{ep.has_validation ? 'success' : 'danger'}}">${{ep.has_validation ? 'валидация: да' : 'валидация: нет'}}</span>
         </div>
-      </div>
-      <div class="detail-field">
-        <div class="detail-field-label">Оценка ASE</div>
-        <div class="detail-field-value" style="color:var(--accent)">${{ep.score.toFixed(2)}}</div>
+        <div class="detail-field-label">Оценка ASE на узле</div>
+        <div class="detail-field-value" style="color:var(--accent);margin-bottom:0.35rem">${{ep.score.toFixed(2)}}</div>
+        ${{a1Info && a1Info.detail ? '<div class="detail-metric-desc">' + escapeHtml(a1Info.detail) + '</div>' : ''}}
       </div>
     `;
   }}
 
-  // Overlay metric details for this node
+  // Active metric overlay details
   if (currentOverlay !== 'topology') {{
     const overlayData = GRAPH_DATA.metric_overlays[currentOverlay];
     const metricInfo = GRAPH_DATA.all_metrics[currentOverlay];
@@ -1640,16 +1785,20 @@ function showDetail(d) {{
       const nodeVal = overlayData ? overlayData[d.id] : undefined;
       const oRange = overlayMax - overlayMin || 1;
       const normVal = nodeVal !== undefined ? (nodeVal - overlayMin) / oRange : undefined;
+      const sysValStr = metricInfo.value !== null ? (metricInfo.value * 100).toFixed(1) + '%' : 'N/A';
       html += `
-        <div class="detail-field">
-          <div class="detail-field-label">Оверлей: ${{escapeHtml(currentOverlay)}} — ${{escapeHtml(metricInfo.name)}}</div>
-          <div class="detail-field-value" style="color:${{normVal !== undefined ? riskColor(normVal) : 'var(--text-tertiary)'}}">
-            ${{normVal !== undefined ? Math.round(normVal * 100) + '% (' + nodeVal.toFixed(2) + ')' : 'нет данных'}}
+        <div class="detail-metric-info">
+          <div class="detail-metric-header">
+            <span class="detail-metric-id">${{escapeHtml(currentOverlay)}}</span>
+            <span class="detail-metric-name">${{escapeHtml(metricInfo.title)}}</span>
           </div>
-        </div>
-        <div class="detail-field">
-          <div class="detail-field-label">Системное значение ${{escapeHtml(currentOverlay)}}</div>
-          <div class="detail-field-value">${{metricInfo.value !== null ? (metricInfo.value * 100).toFixed(1) + '%' : 'N/A'}}</div>
+          <div class="detail-field-label">Значение на узле</div>
+          <div class="detail-field-value" style="color:${{normVal !== undefined ? riskColor(normVal) : 'var(--text-tertiary)'}};margin-bottom:0.35rem">
+            ${{normVal !== undefined ? Math.round(normVal * 100) + '% (' + nodeVal.toFixed(2) + ')' : 'нет данных по узлу'}}
+          </div>
+          <div class="detail-field-label">Системное значение</div>
+          <div class="detail-field-value" style="margin-bottom:0.5rem">${{sysValStr}}</div>
+          ${{metricInfo.detail ? '<div class="detail-metric-desc">' + escapeHtml(metricInfo.detail) + '</div>' : ''}}
         </div>
       `;
     }}
