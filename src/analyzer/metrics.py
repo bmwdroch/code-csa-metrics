@@ -785,6 +785,21 @@ def metric_F1_VFCP(repo_dir: Path, graph: JavaGraph | None, *, mode: str) -> dic
     }
 
 
+_IDENTIFIER_TOKEN_PAT = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\b")
+
+
+def _iter_java_test_files(repo_dir: Path) -> Iterable[Path]:
+    ignore_dirs = {".git", "target", "build", ".gradle", ".idea"}
+    for root, dirs, files in os.walk(repo_dir):
+        dirs[:] = [d for d in dirs if d not in ignore_dirs]
+        parts = Path(root).parts
+        if "src" not in parts or "test" not in parts:
+            continue
+        for fn in files:
+            if fn.endswith(".java"):
+                yield Path(root) / fn
+
+
 def metric_F2_SRP(repo_dir: Path, graph: JavaGraph | None) -> dict:
     # Static proxy: count security constructs and estimate test coverage by string reference in test sources.
     if not graph:
@@ -794,26 +809,30 @@ def metric_F2_SRP(repo_dir: Path, graph: JavaGraph | None) -> dict:
     if not constructs:
         return {"status": "ok", "SRP": 0.0, "constructs": 0, "uncovered": 0, "notes": ["No constructs found by heuristic patterns."]}
 
-    test_text = ""
-    for root, dirs, files in os.walk(repo_dir):
-        dirs[:] = [d for d in dirs if d not in {".git", "target", "build", ".gradle", ".idea"}]
-        if "src" not in Path(root).parts:
+    symbols = {c.get("symbol") for c in constructs if c.get("symbol")}
+    covered_symbols: set[str] = set()
+    remaining_symbols = set(symbols)
+
+    for p in _iter_java_test_files(repo_dir):
+        if not remaining_symbols:
+            break
+        try:
+            text = p.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
             continue
-        if "test" not in Path(root).parts:
+        ids = set(_IDENTIFIER_TOKEN_PAT.findall(text))
+        if not ids:
             continue
-        for fn in files:
-            if fn.endswith(".java"):
-                p = Path(root) / fn
-                try:
-                    test_text += p.read_text(encoding="utf-8", errors="ignore") + "\n"
-                except OSError:
-                    pass
+        matched = ids & remaining_symbols
+        if matched:
+            covered_symbols.update(matched)
+            remaining_symbols.difference_update(matched)
 
     uncovered = 0
     for c in constructs:
         # c is like {"kind":"authz","symbol":"SomeClass"}; check in tests
         sym = c.get("symbol") or ""
-        if sym and sym not in test_text:
+        if sym and sym not in covered_symbols:
             uncovered += 1
 
     srp = uncovered / len(constructs) if constructs else 0.0

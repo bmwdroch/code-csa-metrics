@@ -95,6 +95,20 @@ def start_docker_stats_sampler(container_name: str, stats: dict) -> tuple[subpro
     return proc, t
 
 
+def stop_docker_stats_sampler(
+    proc: subprocess.Popen[str] | None,
+    thread: threading.Thread | None,
+) -> None:
+    if not proc or not thread:
+        return
+    proc.terminate()
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+    thread.join(timeout=5)
+
+
 def parse_mem_usage(mem_usage_field: str) -> tuple[int | None, int | None]:
     parts = [p.strip() for p in mem_usage_field.split("/", 1)]
     if len(parts) != 2:
@@ -259,40 +273,57 @@ def main() -> int:
     orchestrator["docker"]["container_id"] = container_id
     orchestrator["docker"]["container_name"] = container_name
 
-    stats_proc, stats_thread = start_docker_stats_sampler(container_name, orchestrator["stats"])
-
-    # Ожидание завершения контейнера с опциональным таймаутом.
+    stats_proc: subprocess.Popen[str] | None = None
+    stats_thread: threading.Thread | None = None
+    wait_res: CmdResult | None = None
     timed_out = False
-    if args.timeout > 0:
-        wait_res = run_cmd(["docker", "wait", container_name], timeout=args.timeout)
-        if wait_res.returncode == -1 and wait_res.stderr == "timeout":
-            timed_out = True
-            run_cmd(["docker", "stop", "-t", "5", container_name])
-            wait_res = run_cmd(["docker", "wait", container_name])
-    else:
-        wait_res = run_cmd(["docker", "wait", container_name])
+    interrupted = False
 
-    orchestrator["timings"]["docker_wait_sec"] = wait_res.duration_sec
-    orchestrator["docker"]["exit_code"] = wait_res.stdout.strip()
-    orchestrator["docker"]["timed_out"] = timed_out
-    orchestrator["timings"]["docker_run_total_wall_sec"] = time.perf_counter() - t_run
-
-    # Stop stats sampler (docker stats keeps streaming even after container exit).
-    stats_proc.terminate()
     try:
-        stats_proc.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        stats_proc.kill()
-    stats_thread.join(timeout=5)
+        stats_proc, stats_thread = start_docker_stats_sampler(container_name, orchestrator["stats"])
 
-    logs = run_cmd(["docker", "logs", container_name])
-    if logs.returncode == 0:
-        (out_dir / "container.log").write_text(logs.stdout, encoding="utf-8")
-    else:
-        orchestrator["errors"].append({"step": "docker_logs", "stderr": logs.stderr[-2000:]})
+        # Ожидание завершения контейнера с опциональным таймаутом.
+        if args.timeout > 0:
+            wait_res = run_cmd(["docker", "wait", container_name], timeout=args.timeout)
+            if wait_res.returncode == -1 and wait_res.stderr == "timeout":
+                timed_out = True
+                stop = run_cmd(["docker", "stop", "-t", "5", container_name])
+                orchestrator["timings"]["docker_stop_sec"] = stop.duration_sec
+                if stop.returncode != 0:
+                    orchestrator["errors"].append({"step": "docker_stop", "stderr": stop.stderr[-2000:]})
+                wait_res = run_cmd(["docker", "wait", container_name])
+        else:
+            wait_res = run_cmd(["docker", "wait", container_name])
+    except KeyboardInterrupt:
+        interrupted = True
+        orchestrator["docker"]["interrupted"] = True
+    finally:
+        if wait_res is not None:
+            orchestrator["timings"]["docker_wait_sec"] = wait_res.duration_sec
+            orchestrator["docker"]["exit_code"] = wait_res.stdout.strip()
+        orchestrator["docker"]["timed_out"] = timed_out
+        orchestrator["timings"]["docker_run_total_wall_sec"] = time.perf_counter() - t_run
 
-    rm = run_cmd(["docker", "rm", "-f", container_name])
-    orchestrator["timings"]["docker_rm_sec"] = rm.duration_sec
+        # Stop stats sampler (docker stats keeps streaming even after container exit).
+        stop_docker_stats_sampler(stats_proc, stats_thread)
+
+        # Ensure the container is stopped if wait was interrupted.
+        if wait_res is None:
+            stop = run_cmd(["docker", "stop", "-t", "5", container_name])
+            orchestrator["timings"]["docker_stop_sec"] = stop.duration_sec
+            if stop.returncode != 0:
+                orchestrator["errors"].append({"step": "docker_stop", "stderr": stop.stderr[-2000:]})
+
+        logs = run_cmd(["docker", "logs", container_name])
+        if logs.returncode == 0:
+            (out_dir / "container.log").write_text(logs.stdout, encoding="utf-8")
+        else:
+            orchestrator["errors"].append({"step": "docker_logs", "stderr": logs.stderr[-2000:]})
+
+        rm = run_cmd(["docker", "rm", "-f", container_name])
+        orchestrator["timings"]["docker_rm_sec"] = rm.duration_sec
+        if rm.returncode != 0:
+            orchestrator["errors"].append({"step": "docker_rm", "stderr": rm.stderr[-2000:]})
 
     # Combine reports if analyzer report exists
     combined = {"orchestrator": orchestrator, "analyzer": None}
@@ -348,6 +379,9 @@ def main() -> int:
     print(f"Wrote: {combined_path}")
     if args.render_html and orchestrator.get("meta", {}).get("html_report_path"):
         print(f"Wrote: {orchestrator['meta']['html_report_path']}")
+    if interrupted:
+        print(f"Interrupted by user, container cleaned up, see {out_dir}/container.log")
+        return 130
     if orchestrator["errors"]:
         print("Errors:")
         for err in orchestrator["errors"]:

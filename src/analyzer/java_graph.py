@@ -641,9 +641,19 @@ def build_java_graph(repo_dir: Path, *, max_files: int | None) -> JavaGraph:
 
     for path in files:
         is_test = is_test_file(path)
-        src = path.read_bytes()
-        tree = _JAVA_PARSER.parse(src)
-        root = tree.root_node
+        try:
+            src = path.read_bytes()
+        except OSError:
+            continue
+
+        try:
+            tree = _JAVA_PARSER.parse(src)
+        except Exception:
+            # A single malformed file must not abort the whole repository scan.
+            continue
+        root = getattr(tree, "root_node", None)
+        if root is None:
+            continue
         pkg = _package_name(src, root)
         cls = _class_name(src, root)
 
