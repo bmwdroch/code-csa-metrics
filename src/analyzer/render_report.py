@@ -250,6 +250,21 @@ def _build_graph_data(data: dict[str, Any], *, max_graph_nodes: int = 500) -> di
 
     sink_ids = set(export.get("sink_ids", []))
 
+    # Если M1 сообщает о наличии стоков, но не экспортирует их ID,
+    # определяем стоки эвристически: узлы с входящими и без исходящих рёбер,
+    # не являющиеся точками входа и тестами.
+    if not sink_ids and m1.get("sinks", 0) > 0:
+        outgoing = set()
+        incoming = set()
+        for src, tgt in raw_edges:
+            outgoing.add(src)
+            incoming.add(tgt)
+        test_pattern = re.compile(r'(?i)(test|spec|mock|stub)')
+        for n in raw_nodes:
+            if n in incoming and n not in outgoing and n not in entrypoint_ids:
+                if not test_pattern.search(n):
+                    sink_ids.add(n)
+
     # Сокращение графа до лимита
     all_nodes, all_edges = _trim_graph(
         raw_nodes, raw_edges, entrypoint_ids, sink_ids, max_graph_nodes,
@@ -344,10 +359,10 @@ def _build_graph_data(data: dict[str, Any], *, max_graph_nodes: int = 500) -> di
             "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
         },
         "summary": {
-            "nodes": m1.get("nodes", len(all_nodes)),
-            "edges": m1.get("edges", len(all_edges)),
-            "entrypoints": m1.get("entrypoints", len(entrypoint_ids)),
-            "sinks": m1.get("sinks", len(sink_ids)),
+            "nodes": len(all_nodes),
+            "edges": len(all_edges),
+            "entrypoints": len(entrypoint_ids),
+            "sinks": len(sink_ids),
             "aggregate_score": round(aggregate.get("score", 0.0), 4),
         },
         "nodes": nodes,
@@ -384,6 +399,17 @@ def _render_html(graph_data: dict[str, Any]) -> str:
     score_pct = round(summary["aggregate_score"] * 100, 1)
     commit_short = meta["git_head"][:8] if meta["git_head"] else "n/a"
 
+    score_val = summary["aggregate_score"]
+    if score_val < 0.3:
+        score_color = "#34d399"  # green — good
+        score_label = "низкий риск"
+    elif score_val < 0.6:
+        score_color = "#fbbf24"  # yellow — moderate
+        score_label = "средний риск"
+    else:
+        score_color = "#f87171"  # red — high
+        score_label = "высокий риск"
+
     html = f"""\
 <!DOCTYPE html>
 <html lang="ru">
@@ -403,8 +429,8 @@ def _render_html(graph_data: dict[str, Any]) -> str:
   --surface-1: #0d0d0d;
   --surface-2: #171717;
   --surface-3: #1f1f1f;
-  --border: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.15);
+  --border: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.18);
   --text-primary: #ffffff;
   --text-secondary: #a3a3a3;
   --text-tertiary: #6b6b6b;
@@ -478,9 +504,9 @@ html, body {{
    ====================================================================== */
 .dot-corner {{
   position: absolute;
-  width: 4px;
-  height: 4px;
-  background: var(--text-secondary);
+  width: 3px;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.15);
   z-index: 2;
 }}
 .dot-corner.tl {{ top: 6px; left: 6px; }}
@@ -1009,9 +1035,10 @@ html, body {{
       <span class="dot-corner tl"></span><span class="dot-corner tr"></span>
       <span class="dot-corner bl"></span><span class="dot-corner br"></span>
       <div class="stat-label" title="Средневзвешенный уровень безопасности: 0% — максимальная защищённость, 100% — максимальный риск">Общая оценка</div>
-      <div class="stat-value accent">{score_pct}<span style="font-size:0.875rem;font-weight:400;color:var(--text-tertiary)">%</span></div>
+      <div class="stat-value" style="color:{score_color}">{score_pct}<span style="font-size:0.875rem;font-weight:400;color:var(--text-tertiary)">%</span></div>
+      <div style="font-size:0.6875rem;color:{score_color};margin-top:0.2rem">{score_label}</div>
       <div class="progress-bar">
-        <div class="progress-fill" style="width:{score_pct}%"></div>
+        <div class="progress-fill" style="width:{score_pct}%;background:{score_color}"></div>
       </div>
     </div>
   </div>
@@ -1176,7 +1203,7 @@ function switchTab(tabId) {{
   const ids = Object.keys(metricsMap).sort();
   ids.forEach(mid => {{
     const m = metricsMap[mid];
-    if (m.status === 'ok' && overlays[mid]) {{
+    if (m.status === 'ok') {{
       const opt = document.createElement('option');
       opt.value = mid;
       opt.textContent = mid + ' — ' + m.name;
@@ -1243,14 +1270,14 @@ function switchTab(tabId) {{
       .attr('text-anchor', 'middle')
       .attr('dominant-baseline', 'central')
       .attr('fill', '#e5e5e5')
-      .attr('font-size', '13px')
+      .attr('font-size', '12px')
       .attr('font-weight', '600')
       .attr('font-family', 'JetBrains Mono, monospace')
       .text(d.group);
 
     // Group name label
-    const nlx = (R + 38) * Math.cos(angle);
-    const nly = (R + 38) * Math.sin(angle);
+    const nlx = (R + 42) * Math.cos(angle);
+    const nly = (R + 42) * Math.sin(angle);
     gRadar.append('text')
       .attr('x', nlx).attr('y', nly)
       .attr('text-anchor', 'middle')
@@ -1329,7 +1356,7 @@ function switchTab(tabId) {{
     items.forEach(m => {{
       const card = document.createElement('div');
       card.className = 'metric-card' + (m.status !== 'ok' ? ' disabled' : '');
-      if (m.status === 'ok' && GRAPH_DATA.metric_overlays[m.id]) {{
+      if (m.status === 'ok') {{
         card.onclick = function() {{
           switchTab('graph');
           setMetricOverlay(m.id);
@@ -1617,7 +1644,7 @@ function showDetail(d) {{
         <div class="detail-field">
           <div class="detail-field-label">Оверлей: ${{escapeHtml(currentOverlay)}} — ${{escapeHtml(metricInfo.name)}}</div>
           <div class="detail-field-value" style="color:${{normVal !== undefined ? riskColor(normVal) : 'var(--text-tertiary)'}}">
-            ${{nodeVal !== undefined ? nodeVal.toFixed(2) : 'нет данных'}}
+            ${{normVal !== undefined ? Math.round(normVal * 100) + '% (' + nodeVal.toFixed(2) + ')' : 'нет данных'}}
           </div>
         </div>
         <div class="detail-field">
@@ -1695,19 +1722,33 @@ function setMetricOverlay(metricId) {{
       .attr('stroke-opacity', 0.15);
     pulses.transition(t).attr('opacity', 0);
   }} else {{
-    // Metric has no per-node overlay — keep topology, just show info
+    // Metric has no per-node overlay — highlight entrypoints with system color
+    const sysVal = metricInfo && metricInfo.value !== null ? metricInfo.value : 0;
+    const sysColor = riskColor(sysVal);
+    overlayMin = 0;
+    overlayMax = 1;
     nodes.transition(t)
-      .attr('fill', d => NODE_STYLE[d.type].fill)
-      .attr('r', d => getNodeRadius(d))
-      .attr('opacity', d => getNodeOpacity(d));
+      .attr('fill', d => {{
+        if (!isNodeVisible(d)) return '#333';
+        if (d.type === 'entrypoint') return sysColor;
+        if (d.type === 'sink') return sysColor;
+        return '#333';
+      }})
+      .attr('r', d => {{
+        if (!isNodeVisible(d)) return 1;
+        if (d.type === 'entrypoint') return 5 + sysVal * 5;
+        if (d.type === 'sink') return 5 + sysVal * 5;
+        return 2;
+      }})
+      .attr('opacity', d => {{
+        if (!isNodeVisible(d)) return 0.03;
+        if (d.type === 'entrypoint' || d.type === 'sink') return 1;
+        return 0.12;
+      }});
     links.transition(t)
       .attr('stroke', '#555')
-      .attr('stroke-opacity', d => {{
-        const srcVis = isNodeVisible(d.source);
-        const tgtVis = isNodeVisible(d.target);
-        return (srcVis && tgtVis) ? 0.8 : 0.05;
-      }});
-    pulses.transition(t).attr('opacity', 0.6);
+      .attr('stroke-opacity', 0.15);
+    pulses.transition(t).attr('opacity', 0);
   }}
 
   updateOverlayInfo(metricId);
