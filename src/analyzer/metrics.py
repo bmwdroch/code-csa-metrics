@@ -329,6 +329,13 @@ def metric_B1_IDS(graph: JavaGraph | None, *, max_graph_depth: int) -> dict:
     if not graph:
         return _na(graph, "no_java_graph")
     res = graph.defense_in_depth_paths(max_depth=max_graph_depth)
+    if res.get("system_min_ratio") is None:
+        return {
+            "status": "not_available",
+            "reason": "no_entry_to_sink_paths",
+            "paths_analyzed": res.get("paths_analyzed", 0),
+            "notes": ["No entrypoint->sink path found within max_graph_depth."],
+        }
     return {
         "status": "ok",
         "IDS_system": res["system_min_ratio"],
@@ -489,12 +496,12 @@ def metric_E1_OSDR(repo_dir: Path, *, mode: str) -> dict:
 _JAVA_IDENT_RE = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\b")
 _JAVA_DUP_STR_LIT_RE = re.compile(r"\"(?:\\\\.|[^\"\\\\])*\"")
 _JAVA_DUP_CHAR_LIT_RE = re.compile(r"'(?:\\\\.|[^'\\\\])+'")
-_JAVA_DUP_BLOCK_COMMENT_RE = re.compile(r"/\\*.*?\\*/", re.DOTALL)
+_JAVA_DUP_BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
 _JAVA_DUP_LINE_COMMENT_RE = re.compile(r"//.*?$", re.MULTILINE)
 _JAVA_DUP_HEX_RE = re.compile(r"\b0x[0-9A-Fa-f]+\b")
 _JAVA_DUP_NUM_RE = re.compile(r"\b\d+(?:\.\d+)?\b")
 _JAVA_DUP_TOK_RE = re.compile(
-    r"[A-Za-z_][A-Za-z0-9_]*|==|!=|<=|>=|&&|\\|\\||<<|>>>|>>|[-+*/%&|^!~?:=<>.,;(){}\\[\\]]"
+    r"[A-Za-z_][A-Za-z0-9_]*|==|!=|<=|>=|&&|\|\||<<|>>>|>>|[-+*/%&|^!~?:=<>.,;(){}\[\]]"
 )
 _JAVA_KEYWORDS = {
     # Java keywords + common literals

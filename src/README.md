@@ -19,12 +19,16 @@ python3 src/orchestrate.py --mode fast
 
 # Full: resolve deps for E1 (cache Maven downloads between runs)
 python3 src/orchestrate.py --mode full --m2-cache-dir out/m2-cache --deps-max-modules 8
+
+# Generate interactive HTML report (E1 intentionally excluded)
+python3 src/orchestrate.py --mode fast --render-html
 ```
 
 Artifacts:
 - `out/latest/report.json` - analyzer report (inside-container timings + computed metrics)
 - `out/latest/orchestrator.json` - host-level timings + container stats sampling
 - `out/latest/combined.json` - merged report
+- `out/latest/report.html` - interactive HTML report (generated with `--render-html`, E1 intentionally excluded)
 
 What gets measured:
 - Container lifecycle: `orchestrator.timings.*` (create/start, wait/runtime, rm)

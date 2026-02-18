@@ -1,7 +1,9 @@
-"""Генератор интерактивного HTML-отчёта CSQA (все метрики безопасности).
+"""Генератор интерактивного HTML-отчёта CSQA.
 
-Читает combined.json и создаёт самодостаточный HTML-файл с D3.js force-directed
+Читает ``combined.json`` и создаёт самодостаточный HTML-файл с D3.js force-directed
 графом и панелью сводных показателей в HUD-стилистике.
+
+Примечание: метрика E1 (OSDR, зависимости) намеренно не отображается в HTML-отчёте.
 """
 
 from __future__ import annotations
@@ -25,7 +27,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         Пространство имён с полями ``input`` и ``output``.
     """
     parser = argparse.ArgumentParser(
-        description="Генерация интерактивного HTML-отчёта CSQA (все метрики)",
+        description="Генерация интерактивного HTML-отчёта CSQA (без E1)",
     )
     parser.add_argument(
         "--input", "-i",
@@ -342,13 +344,19 @@ def _build_graph_data(data: dict[str, Any], *, max_graph_nodes: int = 500) -> di
     Returns:
         Словарь GRAPH_DATA со всеми полями для визуализации.
     """
-    analyzer = data.get("analyzer", data)
-    meta = analyzer.get("meta", {})
-    metrics = analyzer.get("metrics", {})
+    analyzer_obj = data.get("analyzer", data)
+    analyzer = analyzer_obj if isinstance(analyzer_obj, dict) else {}
+    meta_obj = analyzer.get("meta", {})
+    metrics_obj = analyzer.get("metrics", {})
+    meta = meta_obj if isinstance(meta_obj, dict) else {}
+    metrics = metrics_obj if isinstance(metrics_obj, dict) else {}
 
     m1 = metrics.get("M1", {})
     a1 = metrics.get("A1", {})
-    aggregate = metrics.get("aggregate", {})
+    aggregate_obj = metrics.get("aggregate", {})
+    aggregate = aggregate_obj if isinstance(aggregate_obj, dict) else {}
+    aggregate_score_raw = aggregate.get("score")
+    aggregate_score = round(float(aggregate_score_raw), 4) if isinstance(aggregate_score_raw, (int, float)) else None
 
     export = m1.get("export", {})
     raw_nodes = export.get("nodes", [])
@@ -477,7 +485,7 @@ def _build_graph_data(data: dict[str, Any], *, max_graph_nodes: int = 500) -> di
             "edges": len(all_edges),
             "entrypoints": len(entrypoint_ids),
             "sinks": len(sink_ids),
-            "aggregate_score": round(aggregate.get("score", 0.0), 4),
+            "aggregate_score": aggregate_score,
         },
         "nodes": nodes,
         "edges": edges,
@@ -486,7 +494,7 @@ def _build_graph_data(data: dict[str, Any], *, max_graph_nodes: int = 500) -> di
         "metric_overlays": metric_overlays,
         "radar": radar_data,
         "aggregate": {
-            "score": round(aggregate.get("score", 0.0), 4),
+            "score": aggregate_score,
             "components": aggregate.get("components", {}),
         },
     }
@@ -510,19 +518,27 @@ def _render_html(graph_data: dict[str, Any]) -> str:
     data_json = data_json.replace("</", "<\\/")
     meta = graph_data["meta"]
     summary = graph_data["summary"]
-    score_pct = round(summary["aggregate_score"] * 100, 1)
+    score_val = summary.get("aggregate_score")
+    has_aggregate_score = isinstance(score_val, (int, float))
+    score_pct = round(score_val * 100, 1) if has_aggregate_score else 0.0
     commit_short = meta["git_head"][:8] if meta["git_head"] else "n/a"
 
-    score_val = summary["aggregate_score"]
-    if score_val < 0.3:
+    if not has_aggregate_score:
+        score_color = "#94a3b8"  # gray — unavailable
+        score_label = "нет данных"
+        score_display = "N/A"
+    elif score_val < 0.3:
         score_color = "#34d399"  # green — good
         score_label = "низкий риск"
+        score_display = f"{score_pct}<span style=\"font-size:0.875rem;font-weight:400;color:var(--text-tertiary)\">%</span>"
     elif score_val < 0.6:
         score_color = "#fbbf24"  # yellow — moderate
         score_label = "средний риск"
+        score_display = f"{score_pct}<span style=\"font-size:0.875rem;font-weight:400;color:var(--text-tertiary)\">%</span>"
     else:
         score_color = "#f87171"  # red — high
         score_label = "высокий риск"
+        score_display = f"{score_pct}<span style=\"font-size:0.875rem;font-weight:400;color:var(--text-tertiary)\">%</span>"
 
     html = f"""\
 <!DOCTYPE html>
@@ -1177,7 +1193,7 @@ html, body {{
       <span class="dot-corner tl"></span><span class="dot-corner tr"></span>
       <span class="dot-corner bl"></span><span class="dot-corner br"></span>
       <div class="stat-label" title="Средневзвешенный уровень безопасности: 0% — максимальная защищённость, 100% — максимальный риск">Общая оценка</div>
-      <div class="stat-value" style="color:{score_color}">{score_pct}<span style="font-size:0.875rem;font-weight:400;color:var(--text-tertiary)">%</span></div>
+      <div class="stat-value" style="color:{score_color}">{score_display}</div>
       <div style="font-size:0.6875rem;color:{score_color};margin-top:0.2rem">{score_label}</div>
       <div class="progress-bar">
         <div class="progress-fill" style="width:{score_pct}%;background:{score_color}"></div>

@@ -101,16 +101,20 @@ def collect_technical_metrics(repo_dir: Path, *, mode: str, deps_max_modules: in
         worst_exit = 0
         stderr_tails: list[str] = []
         for mod in selected or ["."]:
-            if mod == ".":
-                cmd = "./mvnw -q -DskipTests dependency:list " + f"-DoutputFile={out_file_abs} -DappendOutput=true"
-            else:
-                cmd = (
-                    "./mvnw -q -DskipTests -pl "
-                    + mod
-                    + " dependency:list "
-                    + f"-DoutputFile={out_file_abs} -DappendOutput=true"
-                )
-            code, _out, err, dur = _run(["bash", "-lc", cmd], cwd=repo_dir)
+            cmd: list[str] = [
+                "bash",
+                str(repo_dir / "mvnw"),
+                "-q",
+                "-DskipTests",
+            ]
+            if mod != ".":
+                cmd += ["-pl", mod]
+            cmd += [
+                "dependency:list",
+                f"-DoutputFile={out_file_abs}",
+                "-DappendOutput=true",
+            ]
+            code, _out, err, dur = _run(cmd, cwd=repo_dir)
             total_dur += dur
             if code != 0:
                 worst_exit = code

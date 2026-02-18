@@ -140,7 +140,16 @@ def main() -> int:
     parser.add_argument("--mode", choices=["fast", "full"], default="full", help="Analyzer mode")
     parser.add_argument("--build-image", action="store_true", help="Build analyzer image(s) before run")
     parser.add_argument("--image-tag", default="", help="Docker image tag override (auto-selected by mode if empty)")
-    parser.add_argument("--out-dir", default="out/latest", help="Output directory (relative to repo root)")
+    parser.add_argument(
+        "--out-dir",
+        default="out/latest",
+        help="Output directory (relative to repo root, must be under out/)",
+    )
+    parser.add_argument(
+        "--render-html",
+        action="store_true",
+        help="Generate interactive HTML report (out-dir/report.html) from combined.json (E1 is intentionally excluded).",
+    )
     parser.add_argument("--deps-max-modules", type=int, default=8, help="Max Maven modules to analyze for deps (full mode)")
     parser.add_argument("--cpu", default="", help="Docker --cpus value, e.g. 2.0")
     parser.add_argument("--memory", default="", help="Docker --memory value, e.g. 2g")
@@ -149,7 +158,19 @@ def main() -> int:
     args = parser.parse_args()
 
     repo_root = Path(__file__).resolve().parents[1]
-    out_dir = (repo_root / args.out_dir).resolve()
+
+    out_rel = Path(args.out_dir)
+    if out_rel.is_absolute() or ".." in out_rel.parts:
+        print(f"ERROR: --out-dir must be a relative path under out/ (got: {args.out_dir!r})", file=sys.stderr)
+        return 2
+    out_dir = (repo_root / out_rel).resolve()
+    out_root = (repo_root / "out").resolve()
+    try:
+        out_dir.relative_to(out_root)
+    except ValueError:
+        print(f"ERROR: --out-dir must be under out/ (got: {args.out_dir!r})", file=sys.stderr)
+        return 2
+
     if out_dir.exists():
         shutil.rmtree(out_dir)
     ensure_dir(out_dir)
@@ -273,8 +294,6 @@ def main() -> int:
     rm = run_cmd(["docker", "rm", "-f", container_name])
     orchestrator["timings"]["docker_rm_sec"] = rm.duration_sec
 
-    write_json(out_dir / "orchestrator.json", orchestrator)
-
     # Combine reports if analyzer report exists
     combined = {"orchestrator": orchestrator, "analyzer": None}
     report_path = out_dir / "report.json"
@@ -283,9 +302,52 @@ def main() -> int:
             combined["analyzer"] = json.loads(report_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as e:
             orchestrator["errors"].append({"step": "read_report", "error": str(e)})
-    write_json(out_dir / "combined.json", combined)
+    combined_path = out_dir / "combined.json"
+    write_json(combined_path, combined)
 
-    print(f"Wrote: {out_dir}/combined.json")
+    # Optional: render interactive HTML report from combined.json.
+    if args.render_html:
+        html_path = out_dir / "report.html"
+        analyzer_obj = combined.get("analyzer")
+        if not isinstance(analyzer_obj, dict):
+            orchestrator["errors"].append(
+                {
+                    "step": "render_html",
+                    "error": "Analyzer report missing; cannot render HTML report.",
+                }
+            )
+        else:
+            render_script = repo_root / "src" / "analyzer" / "render_report.py"
+            t_html = run_cmd(
+                [
+                    sys.executable,
+                    str(render_script),
+                    "--input",
+                    str(combined_path),
+                    "--output",
+                    str(html_path),
+                ],
+                cwd=repo_root,
+            )
+            orchestrator["timings"]["render_html_sec"] = t_html.duration_sec
+            if t_html.returncode != 0:
+                orchestrator["errors"].append(
+                    {
+                        "step": "render_html",
+                        "stderr": t_html.stderr[-4000:],
+                        "stdout": t_html.stdout[-4000:],
+                    }
+                )
+            else:
+                orchestrator["meta"]["html_report_path"] = str(html_path)
+
+    # Re-write artifacts so they include any errors from read_report/render_html.
+    write_json(out_dir / "orchestrator.json", orchestrator)
+    write_json(combined_path, combined)
+
+    print(f"Wrote: {combined_path}")
+    if args.render_html and orchestrator.get("meta", {}).get("html_report_path"):
+        print(f"Wrote: {orchestrator['meta']['html_report_path']}")
     if orchestrator["errors"]:
         print("Errors:")
         for err in orchestrator["errors"]:

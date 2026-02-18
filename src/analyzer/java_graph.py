@@ -317,8 +317,7 @@ class JavaGraph:
             seen.add((ep.method_id, m))
 
         paths_analyzed = 0
-        best_sink = None
-        best_ratio = 1.0
+        best_ratio = None
         best_detail = None
 
         while dq:
@@ -327,9 +326,8 @@ class JavaGraph:
                 paths_analyzed += 1
                 uniq = bin(mask).count("1")
                 ratio = uniq / 6.0
-                if ratio < best_ratio:
+                if best_ratio is None or ratio < best_ratio:
                     best_ratio = ratio
-                    best_sink = mid
                     best_detail = {"sink": mid, "layers": uniq, "ratio": ratio, "depth": depth}
                 # Do not stop; there might be even weaker paths.
             if depth >= max_depth:
@@ -343,7 +341,7 @@ class JavaGraph:
                 dq.append((nxt, nmask, depth + 1))
 
         return {
-            "system_min_ratio": best_ratio if best_detail else 0.0,
+            "system_min_ratio": best_ratio,
             "paths_analyzed": paths_analyzed,
             "min_path": best_detail,
         }
