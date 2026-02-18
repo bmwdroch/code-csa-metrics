@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+
+{% block title %}CSA Metrics — Code Security Assessment{% endblock %}
+
+{% block content %}
+<div class="page-wrap page-center">
+
+  <!-- Brand header -->
+  <div style="margin-bottom: 2.5rem; animation: slide-up-fade 0.5s cubic-bezier(0.16,1,0.3,1) both;">
+    <div style="font-size: 0.6875rem; font-weight: 500; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.2em; margin-bottom: 0.75rem;">
+      // AICOMPET · SECURITY PIPELINE
+    </div>
+    <h1 style="font-size: 2.5rem; font-weight: 700; letter-spacing: -0.03em; margin-bottom: 0.5rem;">
+      CSA <span style="color: var(--accent);">METRICS</span>
+    </h1>
+    <p style="font-size: 0.875rem; color: var(--text-secondary); max-width: 420px; line-height: 1.55;">
+      Static security analysis of Java repositories —
+      15 metrics across attack surface, defence depth, data flow,
+      and regression risk.
+    </p>
+  </div>
+
+  <!-- Error alert -->
+  {% if error %}
+  <div class="alert alert-danger" style="max-width: 560px;">
+    {{ error }}
+  </div>
+  {% endif %}
+
+  <!-- Analysis form -->
+  <div class="card-hud accent-border accent-glow" style="width: 100%; max-width: 560px;">
+    <span class="corner tl"></span><span class="corner tr"></span>
+    <span class="corner bl"></span><span class="corner br"></span>
+
+    <div class="card-label" style="margin-bottom: 1.25rem;">Analysis Target</div>
+
+    <form method="POST" action="/{{ token }}/run" id="analysis-form">
+
+      <!-- Repository URL -->
+      <div class="input-field" style="margin-bottom: 1.5rem;">
+        <label class="input-label" for="repo_url">GitHub Repository URL</label>
+        <input
+          type="url"
+          id="repo_url"
+          name="repo_url"
+          class="input-control"
+          placeholder="https://github.com/owner/repository"
+          pattern="https?://github\.com/[\w.\-]+/[\w.\-]+.*"
+          required
+          autocomplete="url"
+          spellcheck="false"
+        >
+        <p class="input-hint">Java projects only · Public repositories · Shallow clone (depth 1)</p>
+      </div>
+
+      <!-- Mode selection -->
+      <div style="margin-bottom: 1.5rem;">
+        <div class="input-label" style="margin-bottom: 0.75rem;">Analysis Mode</div>
+        <div class="mode-grid">
+
+          <label class="mode-option mode-option--active" for="mode-fast" style="cursor: var(--cursor-hud-pointer);">
+            <input type="radio" id="mode-fast" name="mode" value="fast" checked hidden>
+            <div class="mode-option__icon">⚡</div>
+            <div class="mode-option__name">Fast</div>
+            <div class="mode-option__desc">Tree-sitter static analysis<br>No JVM required</div>
+            <span class="badge success" style="margin-top: 0.75rem;">Available</span>
+          </label>
+
+          <div class="mode-option mode-option--locked" title="Full mode is disabled in this deployment">
+            <div class="mode-option__icon">🔒</div>
+            <div class="mode-option__name">Full</div>
+            <div class="mode-option__desc">Maven dependency graph<br>Requires JVM + build</div>
+            <span class="badge danger" style="margin-top: 0.75rem;">Restricted</span>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Submit -->
+      <button
+        type="submit"
+        id="submit-btn"
+        class="btn-3d btn-3d--clipped btn-3d--primary"
+        style="width: 100%; justify-content: center; font-size: 0.75rem;"
+      >
+        <span class="btn-3d__text-wrapper">
+          <span class="btn-3d__text btn-3d__text--front">Analyze Repository</span>
+          <span class="btn-3d__text btn-3d__text--back">Initiating&nbsp;→</span>
+        </span>
+      </button>
+
+    </form>
+  </div>
+
+  <!-- Stats strip -->
+  <div class="stats-row" style="max-width: 560px;">
+
+    <div class="stat-card">
+      <span class="dot-corner tl"></span><span class="dot-corner br"></span>
+      <div class="stat-label">Metrics</div>
+      <div class="stat-value accent">15</div>
+      <div class="stat-sub">Security dimensions</div>
+    </div>
+
+    <div class="stat-card">
+      <span class="dot-corner tl"></span><span class="dot-corner br"></span>
+      <div class="stat-label">Groups</div>
+      <div class="stat-value">5</div>
+      <div class="stat-sub">A · B · C · D · F</div>
+    </div>
+
+    <div class="stat-card">
+      <span class="dot-corner tl"></span><span class="dot-corner br"></span>
+      <div class="stat-label">Output</div>
+      <div class="stat-value" style="font-size: 1.25rem;">HTML</div>
+      <div class="stat-sub">Interactive report</div>
+    </div>
+
+    <div class="stat-card">
+      <span class="dot-corner tl"></span><span class="dot-corner br"></span>
+      <div class="stat-label">Mode</div>
+      <div class="stat-value" style="font-size: 1.25rem;">Fast</div>
+      <div class="stat-sub">No JVM needed</div>
+    </div>
+
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Disable submit button after first click to prevent double-submission
+  document.getElementById('analysis-form').addEventListener('submit', function () {
+    const btn = document.getElementById('submit-btn');
+    btn.disabled = true;
+    btn.style.opacity = '0.5';
+  });
+</script>
+{% endblock %}

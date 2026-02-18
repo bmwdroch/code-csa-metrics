@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+
+{% block title %}Analyzing {{ job.repo_display }} — CSA Metrics{% endblock %}
+
+{% block content %}
+<div class="page-wrap page-center">
+
+  <!-- Header -->
+  <div style="margin-bottom: 2rem; width: 100%; max-width: 560px; text-align: left;">
+    <div style="font-size: 0.6875rem; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.15em; margin-bottom: 0.5rem;">
+      // Analysis in progress
+    </div>
+    <h1 style="font-size: 1.5rem; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 0.75rem;">
+      Running Security Analysis
+    </h1>
+  </div>
+
+  <!-- Repo chip -->
+  <div class="repo-chip" style="max-width: 560px; width: 100%; justify-content: flex-start;">
+    <span class="repo-chip__label">Target</span>
+    <span id="repo-url-display" style="color: var(--text-primary); font-weight: 500;">
+      {{ job.repo_display }}
+    </span>
+    <span class="badge" style="margin-left: auto;">fast mode</span>
+  </div>
+
+  <!-- Progress card -->
+  <div class="card-hud" style="width: 100%; max-width: 560px;">
+    <span class="dot-corner tl"></span><span class="dot-corner tr"></span>
+    <span class="dot-corner bl"></span><span class="dot-corner br"></span>
+
+    <!-- Progress bar -->
+    <div class="progress-wrap">
+      <div class="progress-label">
+        <span id="stage-label">Initializing...</span>
+        <span id="pct-label">0%</span>
+      </div>
+      <div class="progress-bar thick">
+        <div class="progress-fill scanning" id="progress-fill" style="width: 0%;"></div>
+      </div>
+      <div class="status-line">
+        <span class="status-dot" id="status-dot"></span>
+        <span id="status-msg">{{ job.message }}</span>
+      </div>
+    </div>
+
+    <!-- Stage checklist -->
+    <div style="margin-top: 1.75rem; display: flex; flex-direction: column; gap: 0.5rem;">
+      <div class="stage-item" id="stage-init">
+        <span class="stage-icon">◇</span>
+        <span class="stage-text">Initialize Docker container</span>
+      </div>
+      <div class="stage-item" id="stage-clone">
+        <span class="stage-icon">◇</span>
+        <span class="stage-text">Clone repository</span>
+      </div>
+      <div class="stage-item" id="stage-analyze">
+        <span class="stage-icon">◇</span>
+        <span class="stage-text">Build call graph &amp; analyze code</span>
+      </div>
+      <div class="stage-item" id="stage-metrics">
+        <span class="stage-icon">◇</span>
+        <span class="stage-text">Compute security metrics</span>
+      </div>
+      <div class="stage-item" id="stage-report">
+        <span class="stage-icon">◇</span>
+        <span class="stage-text">Render interactive HTML report</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Note -->
+  <p style="margin-top: 1.25rem; font-size: 0.75rem; color: var(--text-tertiary); max-width: 420px; line-height: 1.55; text-align: center;">
+    Large repositories may take several minutes to clone and analyze.
+    This page will redirect automatically when the report is ready.
+  </p>
+
+  <!-- Error panel (hidden by default) -->
+  <div id="error-panel" class="alert alert-danger" style="display: none; max-width: 560px; width: 100%; margin-top: 1.5rem;">
+    <strong>Analysis failed:</strong><br>
+    <span id="error-msg"></span>
+  </div>
+
+  <!-- Back link -->
+  <div style="margin-top: 1.5rem;">
+    <a href="/{{ token }}/" class="btn-clipped ghost" style="font-size: 0.6875rem;">
+      ← Start new analysis
+    </a>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block head %}
+<style>
+  .stage-item {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+    transition: color 0.3s ease;
+  }
+  .stage-item.active  { color: var(--accent); }
+  .stage-item.done    { color: #34d399; }
+  .stage-item.failed  { color: #f87171; }
+
+  .stage-icon {
+    font-size: 0.6875rem;
+    width: 1rem;
+    text-align: center;
+    transition: all 0.3s ease;
+  }
+  .stage-item.active  .stage-icon { animation: blink 1s step-end infinite; }
+  .stage-item.done    .stage-icon { animation: none; }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const TOKEN  = {{ token | tojson }};
+  const JOB_ID = {{ job.id | tojson }};
+
+  // ── DOM refs ─────────────────────────────────────────────────────────────────
+  const fill      = document.getElementById('progress-fill');
+  const pctLabel  = document.getElementById('pct-label');
+  const stageLabel= document.getElementById('stage-label');
+  const statusMsg = document.getElementById('status-msg');
+  const statusDot = document.getElementById('status-dot');
+  const errorPanel= document.getElementById('error-panel');
+  const errorMsg  = document.getElementById('error-msg');
+
+  const stages = {
+    init:    document.getElementById('stage-init'),
+    clone:   document.getElementById('stage-clone'),
+    analyze: document.getElementById('stage-analyze'),
+    metrics: document.getElementById('stage-metrics'),
+    report:  document.getElementById('stage-report'),
+  };
+
+  // ── Stage mapping (percent thresholds → which stage is active) ───────────────
+  function updateStages(pct, status) {
+    const map = [
+      ['init',    0,  20],
+      ['clone',   20, 40],
+      ['analyze', 40, 68],
+      ['metrics', 68, 82],
+      ['report',  82, 100],
+    ];
+    map.forEach(([key, lo, hi]) => {
+      const el   = stages[key];
+      const icon = el.querySelector('.stage-icon');
+      el.classList.remove('active', 'done', 'failed');
+      if (status === 'done' || pct >= hi) {
+        el.classList.add('done');
+        icon.textContent = '✓';
+      } else if (pct >= lo) {
+        el.classList.add('active');
+        icon.textContent = '◈';
+      } else {
+        icon.textContent = '◇';
+      }
+    });
+    if (status === 'failed') {
+      Object.values(stages).forEach(el => {
+        if (el.classList.contains('active')) {
+          el.classList.remove('active');
+          el.classList.add('failed');
+          el.querySelector('.stage-icon').textContent = '✗';
+        }
+      });
+    }
+  }
+
+  // ── Progress update ───────────────────────────────────────────────────────────
+  function applyProgress(pct, msg, status) {
+    fill.style.width  = pct + '%';
+    pctLabel.textContent  = pct + '%';
+    stageLabel.textContent = status === 'done' ? 'Complete' :
+                             status === 'failed' ? 'Failed' : 'Running';
+    statusMsg.textContent = msg;
+    updateStages(pct, status);
+
+    if (status === 'done') {
+      fill.classList.remove('scanning');
+      statusDot.style.background = '#34d399';
+      statusDot.style.animation  = 'none';
+    } else if (status === 'failed') {
+      fill.classList.remove('scanning');
+      fill.style.background = '#f87171';
+      statusDot.style.background = '#f87171';
+      statusDot.style.animation  = 'none';
+    }
+  }
+
+  // ── SSE ───────────────────────────────────────────────────────────────────────
+  let retryDelay = 1000;
+
+  function connect() {
+    const url = `/${TOKEN}/api/job/${JOB_ID}/events`;
+    const es  = new EventSource(url);
+
+    es.addEventListener('progress', function (e) {
+      const d = JSON.parse(e.data);
+      applyProgress(d.percent, d.message, d.status);
+      retryDelay = 1000;
+    });
+
+    es.addEventListener('done', function (e) {
+      const d = JSON.parse(e.data);
+      es.close();
+      applyProgress(100, 'Analysis complete! Redirecting…', 'done');
+      setTimeout(() => { window.location.href = d.redirect; }, 900);
+    });
+
+    es.addEventListener('fail', function (e) {
+      es.close();
+      const d = JSON.parse(e.data);
+      applyProgress(0, 'Analysis failed', 'failed');
+      errorMsg.textContent   = d.message || 'Unknown error';
+      errorPanel.style.display = 'block';
+    });
+
+    es.onerror = function () {
+      es.close();
+      // Reconnect with exponential backoff (cap at 10 s)
+      setTimeout(() => {
+        retryDelay = Math.min(retryDelay * 2, 10000);
+        connect();
+      }, retryDelay);
+    };
+  }
+
+  connect();
+</script>
+{% endblock %}
