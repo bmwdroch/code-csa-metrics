@@ -1777,8 +1777,8 @@ function showDetail(d) {{
     `;
   }}
 
-  // Active metric overlay details
-  if (currentOverlay !== 'topology') {{
+  // Active metric overlay details (skip if A1 already shown via entrypoint block)
+  if (currentOverlay !== 'topology' && !(currentOverlay === 'A1' && ep)) {{
     const overlayData = GRAPH_DATA.metric_overlays[currentOverlay];
     const metricInfo = GRAPH_DATA.all_metrics[currentOverlay];
     if (metricInfo) {{
