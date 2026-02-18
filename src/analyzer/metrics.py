@@ -268,6 +268,8 @@ def metric_A1_ASE(graph: JavaGraph | None) -> dict:
     mult_map_object = 1.5
     mult_no_auth = 1.4
     mult_no_validation = 1.2
+    # Theoretical maximum per-node raw score (untyped + no_auth + no_validation).
+    _max_raw = mult_map_object * mult_no_auth * mult_no_validation  # 1.5 × 1.4 × 1.2 = 2.52
 
     total = 0.0
     per_entry = []
@@ -277,12 +279,19 @@ def metric_A1_ASE(graph: JavaGraph | None) -> dict:
             m *= mult_string
         elif ep.param_risk == "untyped":
             m *= mult_map_object
+        elif ep.param_risk == "binary":
+            m *= mult_map_object
         if not ep.has_auth:
             m *= mult_no_auth
         if not ep.has_validation:
             m *= mult_no_validation
         total += m
-        per_entry.append({"method": ep.method_id, "score": m, "has_auth": ep.has_auth, "has_validation": ep.has_validation})
+        per_entry.append({
+            "method": ep.method_id,
+            "score": round(min(1.0, m / _max_raw), 4),
+            "has_auth": ep.has_auth,
+            "has_validation": ep.has_validation,
+        })
     return {
         "status": "ok",
         "ASE": total,
@@ -306,9 +315,19 @@ def metric_A2_ECI(graph: JavaGraph | None, *, max_graph_depth: int) -> dict:
         eci = complexity / (d + 1)
         top.append((eci, mid, complexity, d))
     top.sort(reverse=True)
+    _eci_cap = 30.0
     return {
         "status": "ok",
-        "top": [{"method": mid, "ECI": eci, "complexity": c, "distance": d} for (eci, mid, c, d) in top[:50]],
+        "top": [
+            {
+                "method": mid,
+                "ECI": eci,
+                "ECI_norm": round(min(1.0, eci / _eci_cap), 4),
+                "complexity": c,
+                "distance": d,
+            }
+            for (eci, mid, c, d) in top[:50]
+        ],
         "methods_reachable": len(distances),
         "notes": ["Cognitive complexity is an approximation; distances overapprox due to heuristic call edges."],
     }

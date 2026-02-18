@@ -446,8 +446,8 @@ def _build_graph_data(data: dict[str, Any], *, max_graph_nodes: int = 500) -> di
     a2_overlay: dict[str, float] = {}
     for entry in a2.get("top", []):
         mid_e = entry.get("method", "")
-        if mid_e and entry.get("ECI") is not None:
-            a2_overlay[mid_e] = entry["ECI"]
+        if mid_e and entry.get("ECI_norm") is not None:
+            a2_overlay[mid_e] = entry["ECI_norm"]
     if a2_overlay:
         metric_overlays["A2"] = a2_overlay
 
@@ -1791,7 +1791,7 @@ function showDetail(d) {{
           <span class="badge ${{ep.has_validation ? 'success' : 'danger'}}">${{ep.has_validation ? 'валидация: да' : 'валидация: нет'}}</span>
         </div>
         <div class="detail-field-label">Оценка ASE на узле</div>
-        <div class="detail-field-value" style="color:var(--accent);margin-bottom:0.35rem">${{ep.score.toFixed(2)}}</div>
+        <div class="detail-field-value" style="color:var(--accent);margin-bottom:0.35rem">${{Math.round(ep.score * 100)}}%</div>
         ${{a1Info && a1Info.detail ? '<div class="detail-metric-desc">' + escapeHtml(a1Info.detail) + '</div>' : ''}}
       </div>
     `;
@@ -1813,8 +1813,8 @@ function showDetail(d) {{
             <span class="detail-metric-name">${{escapeHtml(metricInfo.title)}}</span>
           </div>
           <div class="detail-field-label">Значение на узле</div>
-          <div class="detail-field-value" style="color:${{normVal !== undefined ? riskColor(normVal) : 'var(--text-tertiary)'}};margin-bottom:0.35rem">
-            ${{normVal !== undefined ? Math.round(normVal * 100) + '% (' + nodeVal.toFixed(2) + ')' : 'нет данных по узлу'}}
+          <div class="detail-field-value" style="color:${{nodeVal !== undefined ? riskColor(nodeVal) : 'var(--text-tertiary)'}};margin-bottom:0.35rem">
+            ${{nodeVal !== undefined ? Math.round(nodeVal * 100) + '%' : 'нет данных по узлу'}}
           </div>
           <div class="detail-field-label">Системное значение</div>
           <div class="detail-field-value" style="margin-bottom:0.5rem">${{sysValStr}}</div>
