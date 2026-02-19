@@ -1398,6 +1398,15 @@ const GROUP_NAMES = {{
 // =========================================================================
 let currentGroupFilter = 'all';
 let currentSevFilter = 'all';
+const SEV_ORDER = {{ critical: 0, high: 1, medium: 2, low: 3 }};
+const SEV_COLORS = {{
+  critical: '#f87171',
+  high: '#fb923c',
+  medium: '#fbbf24',
+  low: '#34d399',
+}};
+const expandedFindings = new Set();
+let expandedFileGroups = new Set();
 
 // =========================================================================
 //  Helpers
@@ -1610,24 +1619,108 @@ function renderFindings() {{
     return;
   }}
 
-  let html = '';
-  filtered.forEach(f => {{
-    const loc = f.file ? (f.file + (f.line ? ':' + f.line : '')) : '';
-    html += '<div class="finding-card">' +
-      '<div class="finding-header">' +
-        '<span class="finding-metric">' + escapeHtml(f.metric || '') + '</span>' +
-        '<span class="finding-severity ' + (f.severity || 'low') + '">' + escapeHtml(f.severity || 'low') + '</span>' +
-        (f.method ? '<span style="font-size:0.6875rem;color:var(--text-secondary)">' + escapeHtml(f.method) + '</span>' : '') +
-        (loc ? '<span class="finding-location">' + escapeHtml(loc) + '</span>' : '') +
+  // Группировка по файлу
+  const fileGroups = {{}};
+  const systemGroup = [];
+
+  filtered.forEach((f, idx) => {{
+    const key = f.file || null;
+    if (key) {{
+      if (!fileGroups[key]) fileGroups[key] = [];
+      fileGroups[key].push({{ f, idx }});
+    }} else {{
+      systemGroup.push({{ f, idx }});
+    }}
+  }});
+
+  // Сортировка файлов по числу дефектов (убывание)
+  const sortedFiles = Object.keys(fileGroups).sort(
+    (a, b) => fileGroups[b].length - fileGroups[a].length
+  );
+
+  // Сортировка дефектов внутри группы по severity
+  function sortBySev(items) {{
+    return items.slice().sort(
+      (a, b) => (SEV_ORDER[a.f.severity] ?? 99) - (SEV_ORDER[b.f.severity] ?? 99)
+    );
+  }}
+
+  function renderFindingRow({{ f, idx }}) {{
+    const sev = f.severity || 'low';
+    const color = SEV_COLORS[sev] || '#94a3b8';
+    const line = f.line ? ':' + f.line : '';
+    const isExpanded = expandedFindings.has(idx);
+
+    const detailClass = 'finding-row-detail' + (isExpanded ? '' : ' collapsed');
+    const methodHtml = f.method
+      ? '<div class="finding-row-method">' + escapeHtml(f.method) + '</div>'
+      : '';
+
+    return (
+      '<div class="finding-row" onclick="toggleFinding(' + idx + ')">' +
+        '<span class="finding-row-dot" style="color:' + color + '">&#9679;</span>' +
+        '<span class="finding-severity ' + sev + '">' + escapeHtml(sev) + '</span>' +
+        '<span class="finding-row-what">' + escapeHtml(f.what || '') + '</span>' +
+        (line ? '<span class="finding-row-line">' + escapeHtml(line) + '</span>' : '') +
       '</div>' +
-      '<div class="finding-what">' + escapeHtml(f.what || '') + '</div>' +
-      '<div class="finding-detail">' +
+      '<div class="' + detailClass + '" id="frd-' + idx + '">' +
+        methodHtml +
         '<strong>Почему: </strong>' + escapeHtml(f.why || '') + '<br>' +
         '<strong>Исправление: </strong>' + escapeHtml(f.fix || '') +
-      '</div>' +
-    '</div>';
-  }});
+      '</div>'
+    );
+  }}
+
+  function renderGroup(groupKey, items, isSystem) {{
+    const sorted = sortBySev(items);
+    const isCollapsed = expandedFileGroups.has(groupKey);
+    const bodyClass = 'file-group-body' + (isCollapsed ? ' collapsed' : '');
+    const arrow = isCollapsed ? '&#9654;' : '&#9660;';
+    const label = isSystem ? 'Уровень системы' : groupKey;
+
+    return (
+      '<div class="file-group">' +
+        '<div class="file-group-header" onclick="toggleFileGroup(' + JSON.stringify(groupKey) + ')">' +
+          '<span class="file-group-name">' + escapeHtml(label) + '</span>' +
+          '<span class="file-group-count">' + items.length + '</span>' +
+          '<span class="file-group-arrow" id="fga-' + CSS.escape(groupKey) + '">' + arrow + '</span>' +
+        '</div>' +
+        '<div class="' + bodyClass + '" id="fgb-' + CSS.escape(groupKey) + '">' +
+          sorted.map(renderFindingRow).join('') +
+        '</div>' +
+      '</div>'
+    );
+  }}
+
+  let html = sortedFiles.map(f => renderGroup(f, fileGroups[f], false)).join('');
+  if (systemGroup.length > 0) {{
+    html += renderGroup('__system__', systemGroup, true);
+  }}
   list.innerHTML = html;
+}}
+
+function toggleFinding(idx) {{
+  if (expandedFindings.has(idx)) {{
+    expandedFindings.delete(idx);
+  }} else {{
+    expandedFindings.add(idx);
+  }}
+  const el = document.getElementById('frd-' + idx);
+  if (el) el.classList.toggle('collapsed');
+}}
+
+function toggleFileGroup(key) {{
+  if (expandedFileGroups.has(key)) {{
+    expandedFileGroups.delete(key);
+  }} else {{
+    expandedFileGroups.add(key);
+  }}
+  const bodyId = 'fgb-' + CSS.escape(key);
+  const arrowId = 'fga-' + CSS.escape(key);
+  const bodyEl = document.getElementById(bodyId);
+  const arrowEl = document.getElementById(arrowId);
+  if (bodyEl) bodyEl.classList.toggle('collapsed');
+  if (arrowEl) arrowEl.innerHTML = expandedFileGroups.has(key) ? '&#9654;' : '&#9660;';
 }}
 
 function setGroupFilter(group) {{
