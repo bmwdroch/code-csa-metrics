@@ -1250,7 +1250,6 @@ html, body {{
       </div>
       <div class="hud-panel-meta">
         <span>репозиторий: <b>{_escape_html(meta["repo_name"])}</b></span>
-        # <span class="meta-secondary">mode: <b>{_escape_html(meta["mode"])}</b></span>
         <span class="meta-secondary">коммит: <b>{_escape_html(commit_short)}</b></span>
         <span class="meta-secondary">дата: <b>{_escape_html(meta["generated_at"])}</b></span>
         <button class="btn-back" id="btn-back" onclick="goHome()" style="display:none"
