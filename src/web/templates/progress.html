@@ -30,7 +30,10 @@
     <div class="progress-wrap">
       <div class="progress-label">
         <span id="stage-label">Инициализация...</span>
-        <span id="pct-label">0%</span>
+        <div class="progress-label-right">
+          <span id="timer-display" class="timer-display">0:00</span>
+          <span id="pct-label">0%</span>
+        </div>
       </div>
       <div class="progress-bar thick">
         <div class="progress-fill scanning" id="progress-fill" style="width: 0%;"></div>
@@ -111,6 +114,25 @@
   }
   .stage-item.active  .stage-icon { animation: blink 1s step-end infinite; }
   .stage-item.done    .stage-icon { animation: none; }
+
+  .progress-label-right {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+  }
+
+  .timer-display {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.05em;
+    color: var(--accent);
+    opacity: 0.7;
+    transition: color 0.4s ease, opacity 0.4s ease;
+  }
+
+  .timer-display.done   { color: #34d399; opacity: 1; }
+  .timer-display.failed { color: #f87171; opacity: 1; }
 </style>
 {% endblock %}
 
@@ -120,13 +142,40 @@
   const JOB_ID = {{ job.id | tojson }};
 
   // ── DOM refs ─────────────────────────────────────────────────────────────────
-  const fill      = document.getElementById('progress-fill');
-  const pctLabel  = document.getElementById('pct-label');
-  const stageLabel= document.getElementById('stage-label');
-  const statusMsg = document.getElementById('status-msg');
-  const statusDot = document.getElementById('status-dot');
-  const errorPanel= document.getElementById('error-panel');
-  const errorMsg  = document.getElementById('error-msg');
+  const fill        = document.getElementById('progress-fill');
+  const pctLabel    = document.getElementById('pct-label');
+  const stageLabel  = document.getElementById('stage-label');
+  const statusMsg   = document.getElementById('status-msg');
+  const statusDot   = document.getElementById('status-dot');
+  const errorPanel  = document.getElementById('error-panel');
+  const errorMsg    = document.getElementById('error-msg');
+  const timerDisplay= document.getElementById('timer-display');
+
+  // ── Stopwatch ─────────────────────────────────────────────────────────────────
+  const _startTime = Date.now();
+  let _timerInterval = null;
+
+  function _formatTime(ms) {
+    const totalSec = Math.floor(ms / 1000);
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    return m + ':' + String(s).padStart(2, '0');
+  }
+
+  function _startTimer() {
+    timerDisplay.textContent = '0:00';
+    _timerInterval = setInterval(() => {
+      timerDisplay.textContent = _formatTime(Date.now() - _startTime);
+    }, 500);
+  }
+
+  function _stopTimer(state) {
+    clearInterval(_timerInterval);
+    timerDisplay.textContent = _formatTime(Date.now() - _startTime);
+    timerDisplay.classList.add(state);
+  }
+
+  _startTimer();
 
   const stages = {
     init:    document.getElementById('stage-init'),
@@ -183,11 +232,13 @@
       fill.classList.remove('scanning');
       statusDot.style.background = '#34d399';
       statusDot.style.animation  = 'none';
+      _stopTimer('done');
     } else if (status === 'failed') {
       fill.classList.remove('scanning');
       fill.style.background = '#f87171';
       statusDot.style.background = '#f87171';
       statusDot.style.animation  = 'none';
+      _stopTimer('failed');
     }
   }
 

@@ -10,12 +10,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
-from analyzer.java_graph import JavaGraph, build_java_graph
+from analyzer.java_graph import ETI_LEAK_PAT, JavaGraph, build_java_graph
 
 
-_DISABLED_METRICS: dict[str, str] = {
-    "E1": "disabled_by_policy",
-}
+_DISABLED_METRICS: dict[str, str] = {}
 
 
 def compute_all_metrics(
@@ -80,6 +78,8 @@ def compute_all_metrics(
             out["D1"] = metric_D1_PAD(repo_dir)
         elif metric_id == "D2":
             out["D2"] = metric_D2_TCPD(graph, max_graph_depth=max_graph_depth)
+        elif metric_id == "E1":
+            out["E1"] = metric_E1_OSDR(repo_dir)
         elif metric_id == "F1":
             out["F1"] = metric_F1_VFCP(repo_dir, graph, mode=mode)
         elif metric_id == "F2":
@@ -187,6 +187,7 @@ _METRIC_WEIGHTS: dict[str, float] = {
     "C3": 0.08,
     "D1": 0.04,
     "D2": 0.06,
+    "E1": 0.06,
     "F1": 0.05,
     "F2": 0.05,
 }
@@ -205,6 +206,7 @@ _METRIC_SCORE_KEY: dict[str, str] = {
     "C3": "SFA",
     "D1": "PAD",
     "D2": "TCPD",
+    "E1": "OSDR",
     "F1": "VFCP",
     "F2": "SRP",
 }
@@ -259,6 +261,12 @@ def _na(graph: JavaGraph | None, reason: str) -> dict:
     return {"status": "not_available", "reason": reason}
 
 
+def _method_location(graph: JavaGraph, method_id: str) -> tuple[str | None, int | None]:
+    """Извлекает файл и строку метода из method_flags."""
+    flags = graph.method_flags.get(method_id, {})
+    return flags.get("rel_path"), flags.get("start_line")
+
+
 def metric_A1_ASE(graph: JavaGraph | None) -> dict:
     if not graph:
         return _na(graph, "no_java_graph")
@@ -273,6 +281,7 @@ def metric_A1_ASE(graph: JavaGraph | None) -> dict:
 
     total = 0.0
     per_entry = []
+    findings: list[dict] = []
     for ep in graph.entrypoints:
         m = base
         if ep.param_risk == "stringy":
@@ -292,11 +301,31 @@ def metric_A1_ASE(graph: JavaGraph | None) -> dict:
             "has_auth": ep.has_auth,
             "has_validation": ep.has_validation,
         })
+        rel_path, start_line = _method_location(graph, ep.method_id)
+        if not ep.has_auth:
+            findings.append({
+                "metric": "A1", "severity": "high",
+                "file": rel_path, "line": start_line,
+                "method": ep.method_id,
+                "what": "Endpoint без аутентификации",
+                "why": "HTTP-метод доступен без проверки подлинности, потенциальный вектор несанкционированного доступа",
+                "fix": "Добавьте аннотацию @PreAuthorize или @Secured с указанием требуемой роли",
+            })
+        if not ep.has_validation:
+            findings.append({
+                "metric": "A1", "severity": "medium",
+                "file": rel_path, "line": start_line,
+                "method": ep.method_id,
+                "what": "Endpoint без валидации входных данных",
+                "why": "Входные параметры не проверяются, что допускает передачу некорректных или вредоносных данных",
+                "fix": "Добавьте @Valid к параметрам DTO или явную валидацию входных данных",
+            })
     return {
         "status": "ok",
         "ASE": total,
         "entrypoints": len(graph.entrypoints),
         "sample": per_entry[:50],
+        "findings": findings,
         "notes": ["Heuristic weights; static-only; method call graph is approximate."],
     }
 
@@ -316,19 +345,31 @@ def metric_A2_ECI(graph: JavaGraph | None, *, max_graph_depth: int) -> dict:
         top.append((eci, mid, complexity, d))
     top.sort(reverse=True)
     _eci_cap = 30.0
+    findings: list[dict] = []
+    top_entries = []
+    for (eci, mid, c, d) in top[:50]:
+        rel_path, start_line = _method_location(graph, mid)
+        top_entries.append({
+            "method": mid, "ECI": eci,
+            "ECI_norm": round(min(1.0, eci / _eci_cap), 4),
+            "complexity": c, "distance": d,
+        })
+        if eci >= 10.0:
+            findings.append({
+                "metric": "A2",
+                "severity": "high" if eci >= 20.0 else "medium",
+                "file": rel_path, "line": start_line,
+                "method": mid,
+                "what": f"Высокая сложность вблизи входа (ECI={eci:.1f})",
+                "why": f"Метод со сложностью {c} на расстоянии {d} хопов от входа — "
+                       "сложная логика близко к точке входа повышает риск ошибок безопасности",
+                "fix": "Разделите метод на более простые части или вынесите сложную логику дальше от точки входа",
+            })
     return {
         "status": "ok",
-        "top": [
-            {
-                "method": mid,
-                "ECI": eci,
-                "ECI_norm": round(min(1.0, eci / _eci_cap), 4),
-                "complexity": c,
-                "distance": d,
-            }
-            for (eci, mid, c, d) in top[:50]
-        ],
+        "top": top_entries,
         "methods_reachable": len(distances),
+        "findings": findings,
         "notes": ["Cognitive complexity is an approximation; distances overapprox due to heuristic call edges."],
     }
 
@@ -339,6 +380,7 @@ def metric_A3_IET(graph: JavaGraph | None) -> dict:
     weighted_sum = 0.0
     weight_total = 0.0
     per = []
+    findings: list[dict] = []
     for ep in graph.entrypoints:
         w = {"http": 1.0, "mq": 0.8, "job": 0.5}.get(ep.entry_type, 0.7)
         entropy = {"low": 0.2, "medium": 0.5, "high": 0.8, "very_high": 1.0}.get(ep.entropy_level, 0.5)
@@ -347,8 +389,20 @@ def metric_A3_IET(graph: JavaGraph | None) -> dict:
         weighted_sum += entropy * w
         weight_total += w
         per.append({"method": ep.method_id, "entropy": entropy, "weight": w, "type": ep.entry_type})
+        if entropy >= 0.7:
+            rel_path, start_line = _method_location(graph, ep.method_id)
+            findings.append({
+                "metric": "A3",
+                "severity": "high" if entropy >= 0.9 else "medium",
+                "file": rel_path, "line": start_line,
+                "method": ep.method_id,
+                "what": f"Endpoint принимает данные высокой энтропии (entropy={entropy:.2f})",
+                "why": "Входные данные с высокой энтропией (нетипизированные, произвольные строки) "
+                       "увеличивают вероятность инъекционных атак",
+                "fix": "Добавьте строгую типизацию параметров и валидацию (@Valid, @Pattern, @Size)",
+            })
     iet = (weighted_sum / weight_total) if weight_total else 0.0
-    return {"status": "ok", "IET_system": iet, "entrypoints": len(graph.entrypoints), "sample": per[:50]}
+    return {"status": "ok", "IET_system": iet, "entrypoints": len(graph.entrypoints), "sample": per[:50], "findings": findings}
 
 
 def metric_B1_IDS(graph: JavaGraph | None, *, max_graph_depth: int) -> dict:
@@ -360,13 +414,32 @@ def metric_B1_IDS(graph: JavaGraph | None, *, max_graph_depth: int) -> dict:
             "status": "not_available",
             "reason": "no_entry_to_sink_paths",
             "paths_analyzed": res.get("paths_analyzed", 0),
+            "findings": [],
             "notes": ["No entrypoint->sink path found within max_graph_depth."],
         }
+    findings: list[dict] = []
+    min_path = res.get("min_path", {})
+    ratio = res["system_min_ratio"]
+    if ratio < 0.5:
+        sink_id = min_path.get("sink", "")
+        rel_path, start_line = _method_location(graph, sink_id) if sink_id else (None, None)
+        findings.append({
+            "metric": "B1",
+            "severity": "critical" if ratio < 0.2 else "high",
+            "file": rel_path, "line": start_line,
+            "method": sink_id or None,
+            "what": f"Путь от входа до приёмника с {min_path.get('layers', 0)}/6 защитных слоёв",
+            "why": "Недостаточное количество защитных слоёв между точкой входа и критической операцией "
+                   "позволяет обойти защиту при компрометации одного уровня",
+            "fix": "Добавьте промежуточные проверки: аутентификацию, авторизацию, валидацию, "
+                   "санитизацию на пути от входа до приёмника",
+        })
     return {
         "status": "ok",
         "IDS_system": res["system_min_ratio"],
         "paths_analyzed": res["paths_analyzed"],
-        "min_path": res["min_path"],
+        "min_path": min_path,
+        "findings": findings,
         "notes": ["Computed over bounded BFS state space (layers bitmask)."],
     }
 
@@ -381,6 +454,7 @@ def metric_B2_PPI(graph: JavaGraph | None, *, max_graph_depth: int) -> dict:
             "status": "ok",
             "PPI": 0.0,
             "min_distance": None,
+            "findings": [],
             "notes": ["No unauthenticated entrypoints or privileged sinks detected."],
         }
 
@@ -392,43 +466,141 @@ def metric_B2_PPI(graph: JavaGraph | None, *, max_graph_depth: int) -> dict:
             "min_distance": None,
             "entrypoints_unauth": len(unauth_entrypoints),
             "sinks_privileged": len(privileged_sinks),
+            "findings": [],
             "notes": ["Unauthenticated entrypoints and privileged sinks exist, but no path was found within max_graph_depth."],
         }
-    # Логарифмическая нормализация с cap при расстоянии 10.
-    # dist=0 → PPI=1.0 (максимальный риск), dist=10 → PPI=0.0 (минимальный риск).
     ppi = 1.0 - min(1.0, math.log(min_dist + 1) / math.log(11))
-    return {"status": "ok", "PPI": ppi, "min_distance": min_dist}
+    findings: list[dict] = []
+    if min_dist <= 3:
+        findings.append({
+            "metric": "B2",
+            "severity": "critical" if min_dist <= 1 else "high",
+            "file": None, "line": None,
+            "method": None,
+            "what": f"Привилегированная операция доступна за {min_dist} хопов от публичного входа",
+            "why": "Короткий путь от неаутентифицированного входа до привилегированной операции "
+                   "означает минимальное количество проверок на пути к критичным данным",
+            "fix": "Добавьте промежуточные слои авторизации между публичными входами и привилегированными операциями",
+        })
+    return {"status": "ok", "PPI": ppi, "min_distance": min_dist, "findings": findings}
 
 
 def metric_B3_MPSP(graph: JavaGraph | None, *, max_graph_depth: int) -> dict:
     if not graph:
         return _na(graph, "no_java_graph")
     mpsp = graph.path_security_parity(max_depth=max_graph_depth)
-    return {"status": "ok", "MPSP_system": mpsp["system_min_ratio"], "worst_operation": mpsp["worst_operation"]}
+    findings: list[dict] = []
+    ratio = mpsp["system_min_ratio"]
+    if ratio < 0.5:
+        worst = mpsp.get("worst_operation")
+        findings.append({
+            "metric": "B3",
+            "severity": "high" if ratio < 0.3 else "medium",
+            "file": None, "line": None, "method": None,
+            "what": f"Несогласованность защиты путей к операции (паритет {ratio:.2f})",
+            "why": "Разные пути к одной и той же операции имеют различные уровни защиты — "
+                   "атакующий использует наименее защищённый путь",
+            "fix": "Обеспечьте одинаковый набор проверок безопасности на всех путях к критическим операциям",
+        })
+    return {"status": "ok", "MPSP_system": ratio, "worst_operation": mpsp["worst_operation"], "findings": findings}
 
 
 def metric_B4_FSS(graph: JavaGraph | None) -> dict:
     if not graph:
         return _na(graph, "no_java_graph")
-    return {"status": "ok", **graph.fail_safe_score()}
+    result = graph.fail_safe_score()
+    findings: list[dict] = []
+    for cb in graph.catch_blocks:
+        if not isinstance(cb, dict):
+            continue
+        body = cb["body_text"]
+        stripped = re.sub(r"\s+", "", body)
+        is_empty = stripped in {"{}", "{/* */}", "{//}"}
+        if is_empty:
+            findings.append({
+                "metric": "B4", "severity": "critical",
+                "file": cb.get("rel_path"), "line": cb.get("start_line"),
+                "method": cb.get("method_id"),
+                "what": "Пустой catch-блок",
+                "why": "При возникновении исключения выполнение продолжится без обработки ошибки, "
+                       "что может привести к обходу проверок безопасности (fail-open)",
+                "fix": "Добавьте throw, return с ошибкой или логирование внутри catch-блока",
+            })
+        elif "throw" not in body and re.search(r"return\s+(true|false|0|null)\b", body):
+            findings.append({
+                "metric": "B4", "severity": "medium",
+                "file": cb.get("rel_path"), "line": cb.get("start_line"),
+                "method": cb.get("method_id"),
+                "what": "Catch-блок с неоднозначной обработкой (return без throw)",
+                "why": "Возврат значения по умолчанию вместо пробрасывания исключения может "
+                       "маскировать ошибки безопасности",
+                "fix": "Пробрасывайте исключение (throw) или явно обрабатывайте ошибку с логированием",
+            })
+    result["findings"] = findings
+    return {"status": "ok", **result}
 
 
 def metric_C1_TPC(graph: JavaGraph | None, *, max_graph_depth: int) -> dict:
     if not graph:
         return _na(graph, "no_java_graph")
-    return {"status": "ok", **graph.tainted_path_complexity(max_depth=max_graph_depth)}
+    result = graph.tainted_path_complexity(max_depth=max_graph_depth)
+    findings: list[dict] = []
+    max_hops = result.get("TPC_max_consecutive_unsafe_hops", 0)
+    if max_hops >= 3:
+        findings.append({
+            "metric": "C1",
+            "severity": "critical" if max_hops >= 6 else ("high" if max_hops >= 4 else "medium"),
+            "file": None, "line": None, "method": None,
+            "what": f"Путь длиной {max_hops} хопов без валидации/санитизации",
+            "why": "Длинная цепочка вызовов без промежуточной проверки данных позволяет "
+                   "распространение заражённых данных до критических операций",
+            "fix": "Добавьте промежуточную валидацию или санитизацию данных на этом пути",
+        })
+    result["findings"] = findings
+    return {"status": "ok", **result}
 
 
 def metric_C2_ETI(graph: JavaGraph | None) -> dict:
     if not graph:
         return _na(graph, "no_java_graph")
-    return {"status": "ok", **graph.error_transparency_index()}
+    result = graph.error_transparency_index()
+    findings: list[dict] = []
+    for cb in graph.catch_blocks:
+        if not isinstance(cb, dict):
+            continue
+        if ETI_LEAK_PAT.search(cb["body_text"]):
+            findings.append({
+                "metric": "C2", "severity": "high",
+                "file": cb.get("rel_path"), "line": cb.get("start_line"),
+                "method": cb.get("method_id"),
+                "what": "Утечка деталей исключения в ответ клиенту",
+                "why": "getMessage(), printStackTrace() или toString() исключения в ответе "
+                       "раскрывают внутреннюю структуру приложения атакующему",
+                "fix": "Возвращайте обобщённое сообщение об ошибке, детали логируйте серверно",
+            })
+    result["findings"] = findings
+    return {"status": "ok", **result}
 
 
 def metric_C3_SFA(graph: JavaGraph | None) -> dict:
     if not graph:
         return _na(graph, "no_java_graph")
-    return {"status": "ok", **graph.secret_flow_analysis()}
+    result = graph.secret_flow_analysis()
+    findings: list[dict] = []
+    for s in result.get("sample", []):
+        mid = s.get("method", "")
+        rel_path, start_line = _method_location(graph, mid) if mid else (None, None)
+        findings.append({
+            "metric": "C3", "severity": "high",
+            "file": rel_path, "line": start_line,
+            "method": mid,
+            "what": "Секрет (password/token) утекает в лог или сериализацию",
+            "why": "Конфиденциальные данные в логах или сериализованном выводе доступны "
+                   "всем, кто имеет доступ к логам или ответам API",
+            "fix": "Используйте @ToString.Exclude, маскирование или фильтрацию секретов перед логированием",
+        })
+    result["findings"] = findings
+    return {"status": "ok", **result}
 
 
 def metric_D1_PAD(repo_dir: Path) -> dict:
@@ -457,11 +629,23 @@ def metric_D1_PAD(repo_dir: Path) -> dict:
         if any(ext in exts for ext in s):
             present.append(lang)
     boundaries = max(0, len(present) - 1)
+    findings: list[dict] = []
+    if boundaries >= 2:
+        findings.append({
+            "metric": "D1",
+            "severity": "medium" if boundaries < 3 else "high",
+            "file": None, "line": None, "method": None,
+            "what": f"Проект использует {len(present)} языков ({', '.join(present)})",
+            "why": "Каждая технологическая граница — потенциальная точка потери контекста безопасности, "
+                   "сериализации и конвертации данных",
+            "fix": "Обеспечьте единую политику безопасности на всех технологических границах",
+        })
     return {
         "status": "ok",
         "languages_present": present,
         "boundaries": boundaries,
         "PAD": float(boundaries),
+        "findings": findings,
         "notes": ["Boundary count only; policy-gap weighting requires org-specific security policy model."],
     }
 
@@ -469,74 +653,407 @@ def metric_D1_PAD(repo_dir: Path) -> dict:
 def metric_D2_TCPD(graph: JavaGraph | None, *, max_graph_depth: int) -> dict:
     if not graph:
         return _na(graph, "no_java_graph")
-    return {"status": "ok", **graph.trust_chain_depth(max_depth=max_graph_depth)}
+    result = graph.trust_chain_depth(max_depth=max_graph_depth)
+    findings: list[dict] = []
+    max_hops = result.get("TCPD_max_hops_after_last_auth", 0)
+    if max_hops >= 3:
+        findings.append({
+            "metric": "D2",
+            "severity": "high" if max_hops >= 5 else "medium",
+            "file": None, "line": None, "method": None,
+            "what": f"Цепочка доверия длиной {max_hops} хопов после последней проверки auth",
+            "why": "Длинная цепочка посредников после последней проверки авторизации увеличивает "
+                   "риск потери контекста безопасности",
+            "fix": "Добавьте повторную проверку авторизации ближе к критической операции",
+        })
+    result["findings"] = findings
+    return {"status": "ok", **result}
 
 
-def metric_E1_OSDR(repo_dir: Path, *, mode: str) -> dict:
-    # This prototype reports only dependency surface; deep ecosystem health requires external data sources (GH, libs.io, etc.)
+# ---------------------------------------------------------------------------
+# E1 (OSDR): классификация зависимостей и парсинг манифестов сборки
+# ---------------------------------------------------------------------------
+
+_BASELINE_GROUPS: set[str] = {
+    "org.springframework",
+    "org.springframework.boot",
+    "org.springframework.security",
+    "org.springframework.data",
+    "org.springframework.cloud",
+    "org.springframework.kafka",
+    "org.springframework.amqp",
+    "org.springframework.retry",
+    "org.springframework.session",
+    "org.springframework.ws",
+    "org.springframework.webflow",
+    "org.springframework.integration",
+    "org.springframework.batch",
+    "jakarta.servlet",
+    "jakarta.persistence",
+    "jakarta.validation",
+    "jakarta.annotation",
+    "jakarta.transaction",
+    "jakarta.xml",
+    "jakarta.ws",
+    "jakarta.json",
+    "jakarta.inject",
+    "jakarta.enterprise",
+    "jakarta.activation",
+    "jakarta.mail",
+    "javax.servlet",
+    "javax.persistence",
+    "javax.validation",
+    "javax.annotation",
+    "javax.transaction",
+    "javax.xml",
+    "javax.ws",
+    "javax.json",
+    "javax.inject",
+    "javax.enterprise",
+    "org.junit",
+    "org.junit.jupiter",
+    "junit",
+    "org.mockito",
+    "org.hamcrest",
+    "org.assertj",
+    "org.testcontainers",
+    "com.fasterxml.jackson",
+    "com.fasterxml.jackson.core",
+    "com.fasterxml.jackson.datatype",
+    "com.fasterxml.jackson.module",
+    "org.slf4j",
+    "ch.qos.logback",
+    "org.apache.logging.log4j",
+    "org.projectlombok",
+    "io.micrometer",
+    "org.yaml",
+    "org.apache.commons",
+    "com.google.guava",
+    "org.apache.httpcomponents",
+    "org.apache.tomcat",
+    "io.netty",
+    "io.projectreactor",
+    "io.swagger",
+    "org.springdoc",
+    "org.mapstruct",
+    "org.liquibase",
+    "org.flywaydb",
+    "org.hibernate",
+    "org.hibernate.validator",
+    "com.zaxxer",
+    "org.postgresql",
+    "com.mysql",
+    "com.h2database",
+    "org.hsqldb",
+    "redis.clients",
+    "io.lettuce",
+    "org.mongodb",
+    "org.apache.kafka",
+    "com.rabbitmq",
+    "io.grpc",
+    "com.google.protobuf",
+}
+
+_SECURITY_CRYPTO_KEYWORDS: set[str] = {
+    "bcprov", "bcpkix", "bcpg", "bcmail", "bouncy-castle", "bouncycastle",
+    "spring-security", "shiro", "keycloak",
+    "nimbus-jose-jwt", "jjwt", "java-jwt", "jose4j",
+    "jasypt", "tink", "conscrypt",
+    "pac4j", "oauth2", "opensaml", "xmlsec",
+    "crypto", "cipher", "encryption", "gpg",
+}
+
+_GRADLE_DEP_RE = re.compile(
+    r"""(?:implementation|api|compileOnly|runtimeOnly|testImplementation|testRuntimeOnly)"""
+    r"""\s*[\(]?\s*['"]([^'"]+)['"]""",
+    re.MULTILINE,
+)
+
+_GRADLE_GROUP_RE = re.compile(
+    r"""^\s*group\s*=\s*['"]([^'"]+)['"]""",
+    re.MULTILINE,
+)
+
+
+def _classify_dependency(
+    group_id: str,
+    artifact_id: str,
+    internal_prefix: str | None,
+) -> str:
+    """Классифицирует зависимость по group и artifact.
+
+    Args:
+        group_id: Идентификатор группы (например, ``org.springframework``).
+        artifact_id: Идентификатор артефакта.
+        internal_prefix: Префикс groupId проекта для определения самописных библиотек.
+
+    Returns:
+        Категория: ``BASELINE``, ``INTERNAL``, ``SECURITY_SELF``, ``RISKY_SECURITY``, ``OTHER``.
+    """
+    artifact_lower = artifact_id.lower()
+    is_security = any(kw in artifact_lower for kw in _SECURITY_CRYPTO_KEYWORDS)
+
+    if internal_prefix and group_id.startswith(internal_prefix):
+        return "SECURITY_SELF" if is_security else "INTERNAL"
+
+    for baseline in _BASELINE_GROUPS:
+        if group_id == baseline or group_id.startswith(baseline + "."):
+            return "BASELINE"
+
+    if is_security:
+        return "RISKY_SECURITY"
+
+    return "OTHER"
+
+
+def _extract_pom_group_id(pom_text: str) -> str | None:
+    """Извлекает groupId проекта из pom.xml, игнорируя ``<parent>`` блок.
+
+    В дочерних Maven-модулях первый ``<groupId>`` часто принадлежит секции
+    ``<parent>`` (например, ``org.springframework.boot``). Функция сначала ищет
+    ``<groupId>`` за пределами ``<parent>...</parent>``, и только если проектный
+    groupId не объявлен явно, возвращает groupId из ``<parent>``.
+
+    Args:
+        pom_text: Содержимое pom.xml.
+
+    Returns:
+        groupId или ``None``.
+    """
+    stripped = re.sub(r"<parent>.*?</parent>", "", pom_text, flags=re.DOTALL)
+    m = re.search(r"<groupId>\s*([^<]+?)\s*</groupId>", stripped)
+    if m:
+        return m.group(1)
+    parent_m = re.search(
+        r"<parent>.*?<groupId>\s*([^<]+?)\s*</groupId>.*?</parent>",
+        pom_text,
+        re.DOTALL,
+    )
+    return parent_m.group(1) if parent_m else None
+
+
+def _parse_pom_dependencies(pom_text: str) -> list[dict[str, str]]:
+    """Извлекает зависимости из содержимого pom.xml.
+
+    Args:
+        pom_text: Содержимое pom.xml.
+
+    Returns:
+        Список словарей с ключами ``group``, ``artifact``, ``scope``.
+    """
+    deps: list[dict[str, str]] = []
+    dep_pattern = re.compile(
+        r"<dependency>\s*"
+        r"<groupId>\s*([^<]+?)\s*</groupId>\s*"
+        r"<artifactId>\s*([^<]+?)\s*</artifactId>"
+        r"(?:\s*<version>[^<]*</version>)?"
+        r"(?:\s*<scope>\s*([^<]*?)\s*</scope>)?",
+        re.DOTALL,
+    )
+    for m in dep_pattern.finditer(pom_text):
+        deps.append({
+            "group": m.group(1).strip(),
+            "artifact": m.group(2).strip(),
+            "scope": (m.group(3) or "compile").strip(),
+        })
+    return deps
+
+
+def _parse_gradle_dependencies(gradle_text: str) -> list[dict[str, str]]:
+    """Извлекает зависимости из build.gradle / build.gradle.kts.
+
+    Args:
+        gradle_text: Содержимое Gradle-файла.
+
+    Returns:
+        Список словарей с ключами ``group``, ``artifact``, ``scope``.
+    """
+    deps: list[dict[str, str]] = []
+    for m in _GRADLE_DEP_RE.finditer(gradle_text):
+        coord = m.group(1)
+        parts = coord.split(":")
+        if len(parts) >= 2:
+            deps.append({
+                "group": parts[0],
+                "artifact": parts[1],
+                "scope": "compile",
+            })
+    return deps
+
+
+def _detect_internal_prefix(repo_dir: Path) -> str | None:
+    """Определяет groupId-префикс проекта из корневого манифеста сборки.
+
+    Args:
+        repo_dir: Корень репозитория.
+
+    Returns:
+        Префикс groupId или ``None``.
+    """
     root_pom = repo_dir / "pom.xml"
-    if not root_pom.exists():
-        return {"status": "ok", "OSDR": None, "notes": ["No pom.xml; E1 not implemented for this build system."]}
+    if root_pom.exists():
+        text = root_pom.read_text(encoding="utf-8", errors="ignore")
+        gid = _extract_pom_group_id(text)
+        if gid:
+            return gid
 
-    # "Direct" dependencies: approximate by counting <dependency> tags in selected Maven modules.
-    meta_file = repo_dir / ".csa" / "mvn-deps-meta.json"
-    selected_modules: list[str] = []
-    if meta_file.exists():
-        try:
-            meta = json.loads(meta_file.read_text(encoding="utf-8"))
-            selected_modules = list(meta.get("modules_selected") or [])
-        except json.JSONDecodeError:
-            selected_modules = []
-    if not selected_modules:
-        selected_modules = ["."]
+    for name in ("build.gradle", "build.gradle.kts"):
+        gf = repo_dir / name
+        if gf.exists():
+            text = gf.read_text(encoding="utf-8", errors="ignore")
+            m = _GRADLE_GROUP_RE.search(text)
+            if m:
+                return m.group(1)
+    return None
 
-    direct = 0
-    for mod in selected_modules:
-        pom = (repo_dir / mod / "pom.xml") if mod != "." else root_pom
-        if not pom.exists():
-            continue
-        text = pom.read_text(encoding="utf-8", errors="ignore")
-        direct += len(re.findall(r"<dependency>\s*", text))
 
-    res: dict = {
+_OSDR_W_OTHER = 1.0
+_OSDR_W_SECURITY_SELF = 3.0
+_OSDR_W_RISKY_SECURITY = 2.0
+_OSDR_THRESHOLD = 50.0
+
+
+def metric_E1_OSDR(repo_dir: Path) -> dict:
+    """Оценка риска зависимостей (OSDR).
+
+    Парсит pom.xml и build.gradle напрямую (без Maven/Gradle, без JVM),
+    классифицирует зависимости и вычисляет score.
+
+    Args:
+        repo_dir: Корень анализируемого репозитория.
+
+    Returns:
+        Словарь с результатом метрики.
+    """
+    all_deps: list[dict[str, str]] = []
+    pom_files: list[Path] = []
+    gradle_files: list[Path] = []
+
+    for root, dirs, files in os.walk(repo_dir):
+        dirs[:] = [d for d in dirs if d not in {".git", "target", "build", ".gradle", ".idea"}]
+        for fn in files:
+            p = Path(root) / fn
+            if fn == "pom.xml":
+                pom_files.append(p)
+            elif fn in ("build.gradle", "build.gradle.kts"):
+                gradle_files.append(p)
+
+    if not pom_files and not gradle_files:
+        return {
+            "status": "not_available",
+            "reason": "no_build_manifest",
+            "OSDR": None,
+            "notes": ["No pom.xml or build.gradle found; E1 not applicable."],
+        }
+
+    internal_prefix = _detect_internal_prefix(repo_dir)
+
+    for pf in pom_files:
+        text = pf.read_text(encoding="utf-8", errors="ignore")
+        all_deps.extend(_parse_pom_dependencies(text))
+
+    for gf in gradle_files:
+        text = gf.read_text(encoding="utf-8", errors="ignore")
+        all_deps.extend(_parse_gradle_dependencies(text))
+
+    seen: set[tuple[str, str]] = set()
+    unique_deps: list[dict[str, str]] = []
+    for d in all_deps:
+        key = (d["group"], d["artifact"])
+        if key not in seen:
+            seen.add(key)
+            unique_deps.append(d)
+
+    classification: dict[str, list[dict[str, str]]] = {
+        "BASELINE": [],
+        "INTERNAL": [],
+        "SECURITY_SELF": [],
+        "RISKY_SECURITY": [],
+        "OTHER": [],
+    }
+
+    for dep in unique_deps:
+        cat = _classify_dependency(dep["group"], dep["artifact"], internal_prefix)
+        classification[cat].append(dep)
+
+    count_other = len(classification["OTHER"])
+    count_sec_self = len(classification["SECURITY_SELF"])
+    count_risky_sec = len(classification["RISKY_SECURITY"])
+
+    raw_score = (
+        count_other * _OSDR_W_OTHER
+        + count_sec_self * _OSDR_W_SECURITY_SELF
+        + count_risky_sec * _OSDR_W_RISKY_SECURITY
+    )
+    osdr = min(1.0, raw_score / _OSDR_THRESHOLD)
+
+    findings: list[dict] = []
+
+    for dep in classification["SECURITY_SELF"]:
+        findings.append({
+            "metric": "E1",
+            "severity": "high",
+            "file": "pom.xml / build.gradle",
+            "line": None,
+            "method": None,
+            "what": f"Самописная security/crypto библиотека: {dep['group']}:{dep['artifact']}",
+            "why": "Собственная реализация криптографии или механизмов безопасности увеличивает "
+                   "вероятность ошибок в критичном коде",
+            "fix": "Используйте проверенные библиотеки (Spring Security, Bouncy Castle) "
+                   "вместо собственных реализаций",
+        })
+
+    for dep in classification["RISKY_SECURITY"]:
+        findings.append({
+            "metric": "E1",
+            "severity": "medium",
+            "file": "pom.xml / build.gradle",
+            "line": None,
+            "method": None,
+            "what": f"Security/crypto зависимость: {dep['group']}:{dep['artifact']}",
+            "why": "Зависимость от сторонней security/crypto библиотеки вне базового набора "
+                   "требует дополнительного контроля обновлений и уязвимостей",
+            "fix": "Убедитесь, что библиотека актуальна и отслеживается в процессе "
+                   "управления уязвимостями (SCA)",
+        })
+
+    if count_other > 20:
+        findings.append({
+            "metric": "E1",
+            "severity": "medium" if count_other < 40 else "high",
+            "file": "pom.xml / build.gradle",
+            "line": None,
+            "method": None,
+            "what": f"Большое количество сторонних зависимостей: {count_other}",
+            "why": "Каждая дополнительная зависимость увеличивает поверхность атаки "
+                   "и риск supply-chain компрометации",
+            "fix": "Проведите аудит зависимостей, удалите неиспользуемые, "
+                   "консолидируйте дублирующую функциональность",
+        })
+
+    classification_summary = {
+        cat: [f"{d['group']}:{d['artifact']}" for d in deps_list]
+        for cat, deps_list in classification.items()
+        if deps_list
+    }
+
+    return {
         "status": "ok",
-        "direct_dependencies_estimate": direct,
-        "direct_modules_considered": selected_modules,
-        "OSDR": None,
+        "OSDR": round(osdr, 4),
+        "raw_score": round(raw_score, 2),
+        "total_dependencies": len(unique_deps),
+        "internal_prefix": internal_prefix,
+        "classification": classification_summary,
+        "counts": {
+            "baseline": len(classification["BASELINE"]),
+            "internal": len(classification["INTERNAL"]),
+            "security_self": count_sec_self,
+            "risky_security": count_risky_sec,
+            "other": count_other,
+        },
+        "findings": findings,
         "notes": [],
     }
-    if mode != "full":
-        res["notes"].append("Fast mode: transitive dependency ratio not resolved.")
-        return res
-
-    dep_list = repo_dir / ".csa" / "mvn-dependency-list.txt"
-    if not dep_list.exists():
-        res["notes"].append("No Maven dependency list found (.csa/mvn-dependency-list.txt).")
-        return res
-
-    coords: list[str] = []
-    ansi = re.compile("\x1b\\[[0-9;]*[A-Za-z]")
-    for line in dep_list.read_text(encoding="utf-8", errors="ignore").splitlines():
-        line = ansi.sub("", line).strip()
-        if not line or line.startswith("[INFO]") or "Downloading" in line:
-            continue
-        if line.count(":") >= 4:
-            coords.append(line)
-
-    total = len(coords)
-    transitive = max(0, total - direct)
-    trans_ratio = (transitive / total) if total else None
-    res.update(
-        {
-            "dependencies_total_estimate": total,
-            "dependencies_transitive_estimate": transitive,
-            "transitive_ratio_estimate": trans_ratio,
-            # Placeholder composite: start with transitive ratio only.
-            "OSDR": trans_ratio,
-        }
-    )
-    res["notes"].append("Prototype: OSDR currently equals transitive_ratio_estimate (ecosystem health not enriched).")
-    return res
 
 
 _JAVA_IDENT_RE = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\b")
@@ -815,6 +1332,25 @@ def metric_F1_VFCP(repo_dir: Path, graph: JavaGraph | None, *, mode: str) -> dic
     norm_dup = min(1.0, max(0.0, dup))
 
     vfcp = (0.25 * norm_coupling) + (0.25 * norm_complexity) + (0.2 * (1 - norm_coverage)) + (0.15 * norm_dup) + (0.15 * norm_abstraction)
+    findings: list[dict] = []
+    if norm_coverage < 0.3:
+        findings.append({
+            "metric": "F1", "severity": "medium",
+            "file": None, "line": None, "method": None,
+            "what": f"Низкое покрытие тестами ({norm_coverage:.0%})",
+            "why": "Низкое покрытие тестами увеличивает стоимость и риск исправления уязвимостей — "
+                   "невозможно уверенно проверить, что исправление не сломало другую функциональность",
+            "fix": "Увеличьте покрытие тестами, особенно для кода, связанного с безопасностью",
+        })
+    if norm_dup > 0.3:
+        findings.append({
+            "metric": "F1", "severity": "medium",
+            "file": None, "line": None, "method": None,
+            "what": f"Высокий уровень дублирования кода ({norm_dup:.0%})",
+            "why": "Дублированный код требует исправления уязвимости в нескольких местах, "
+                   "что увеличивает риск пропуска одного из них",
+            "fix": "Устраните дублирование, выделив общую логику в отдельные методы",
+        })
     return {
         "status": "ok",
         "VFCP": vfcp,
@@ -827,6 +1363,7 @@ def metric_F1_VFCP(repo_dir: Path, graph: JavaGraph | None, *, mode: str) -> dic
             "duplicate_factor_meta": dup_meta,
             "abstraction": abstraction,
         },
+        "findings": findings,
         "notes": ["Static estimates: coverage via test identifier mentions; duplicates via normalized token hashing (tests excluded)."],
     }
 
@@ -874,14 +1411,23 @@ def metric_F2_SRP(repo_dir: Path, graph: JavaGraph | None) -> dict:
             remaining_symbols.difference_update(matched)
 
     uncovered = 0
+    findings: list[dict] = []
     for c in constructs:
-        # c is like {"kind":"authz","symbol":"SomeClass"}; check in tests
         sym = c.get("symbol") or ""
         if sym and sym not in covered_symbols:
             uncovered += 1
+            findings.append({
+                "metric": "F2", "severity": "medium",
+                "file": None, "line": None,
+                "method": None,
+                "what": f"Конструкция безопасности ({c.get('kind', '?')}) в {sym} не покрыта тестами",
+                "why": "Изменение непокрытого тестами кода безопасности при рефакторинге может "
+                       "незаметно нарушить защиту (регрессия безопасности)",
+                "fix": f"Добавьте тесты для класса {sym}, проверяющие поведение механизма {c.get('kind', '')}",
+            })
 
     srp = uncovered / len(constructs) if constructs else 0.0
-    return {"status": "ok", "SRP": srp, "constructs": len(constructs), "uncovered": uncovered, "notes": ["Heuristic: tests 'cover' construct if symbol name appears in test sources."]}
+    return {"status": "ok", "SRP": srp, "constructs": len(constructs), "uncovered": uncovered, "findings": findings, "notes": ["Heuristic: tests 'cover' construct if symbol name appears in test sources."]}
 
 
 def metric_M1_topology(graph: JavaGraph | None) -> dict:

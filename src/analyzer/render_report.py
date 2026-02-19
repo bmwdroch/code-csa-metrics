@@ -1,9 +1,7 @@
 """Генератор интерактивного HTML-отчёта CSQA.
 
-Читает ``combined.json`` и создаёт самодостаточный HTML-файл с D3.js force-directed
-графом и панелью сводных показателей в HUD-стилистике.
-
-Примечание: метрика E1 (OSDR, зависимости) намеренно не отображается в HTML-отчёте.
+Читает ``combined.json`` и создаёт самодостаточный HTML-файл с панелью сводных
+показателей в HUD-стилистике и таблицей дефектов.
 """
 
 from __future__ import annotations
@@ -28,7 +26,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         Пространство имён с полями ``input`` и ``output``.
     """
     parser = argparse.ArgumentParser(
-        description="Генерация интерактивного HTML-отчёта CSQA (без E1)",
+        description="Генерация интерактивного HTML-отчёта CSQA",
     )
     parser.add_argument(
         "--input", "-i",
@@ -257,6 +255,16 @@ _METRIC_META: dict[str, dict[str, str]] = {
                   "Каждый посредник — точка, где проверки могут быть пропущены. "
                   "Низкое — короткая цепочка, высокое — длинная с рисками.",
     },
+    "E1": {
+        "name": "OSDR", "title": "Риск зависимостей",
+        "group": "E", "score_key": "OSDR",
+        "hint": "Насколько рискован набор внешних зависимостей проекта",
+        "detail": "Анализирует объявленные зависимости из pom.xml и build.gradle, "
+                  "классифицирует их на базовые (Spring, Jackson, JUnit), внутренние "
+                  "(самописные) и прочие. Штрафует за обилие сторонних библиотек "
+                  "и самописную криптографию. "
+                  "Низкое — минимум внешних рисков, высокое — широкая поверхность supply-chain.",
+    },
     "F1": {
         "name": "VFCP", "title": "Предиктор сложности исправления",
         "group": "F", "score_key": "VFCP",
@@ -282,6 +290,7 @@ _GROUP_NAMES: dict[str, str] = {
     "B": "Глубина защиты",
     "C": "Потоки данных",
     "D": "Технологические границы",
+    "E": "Зависимости",
     "F": "Изменяемость",
 }
 
@@ -461,6 +470,16 @@ def _build_graph_data(data: dict[str, Any], *, max_graph_nodes: int = 500) -> di
     if a3_overlay:
         metric_overlays["A3"] = a3_overlay
 
+    # Сбор findings из всех метрик
+    all_findings: list[dict[str, Any]] = []
+    for mid in _METRIC_META:
+        block = metrics.get(mid, {})
+        for f in block.get("findings", []):
+            all_findings.append(f)
+
+    severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+    all_findings.sort(key=lambda f: severity_order.get(f.get("severity", "low"), 3))
+
     # Радар: средние значения по группам метрик
     group_values: dict[str, list[float]] = {}
     for mid, info in all_metrics.items():
@@ -468,7 +487,7 @@ def _build_graph_data(data: dict[str, Any], *, max_graph_nodes: int = 500) -> di
             group_values.setdefault(info["group"], []).append(info["value"])
 
     radar_data: list[dict[str, Any]] = []
-    for gid in ("A", "B", "C", "D", "F"):
+    for gid in ("A", "B", "C", "D", "E", "F"):
         vals = group_values.get(gid, [])
         avg = round(min(1.0, max(0.0, sum(vals) / len(vals))), 4) if vals else None
         radar_data.append({"group": gid, "label": _GROUP_NAMES[gid], "value": avg})
@@ -497,6 +516,7 @@ def _build_graph_data(data: dict[str, Any], *, max_graph_nodes: int = 500) -> di
         "all_metrics": all_metrics,
         "metric_overlays": metric_overlays,
         "radar": radar_data,
+        "findings": all_findings,
         "aggregate": {
             "score": aggregate_score,
             "components": aggregate.get("components", {}),
@@ -723,6 +743,10 @@ html, body {{
 .tab-content.active[data-tab-type="graph"] {{
   display: flex;
   flex-direction: column;
+}}
+.tab-content.active[data-tab-type="findings"] {{
+  display: block;
+  overflow-y: auto;
 }}
 
 /* ======================================================================
@@ -974,102 +998,92 @@ html, body {{
 }}
 
 /* ======================================================================
-   Graph Container
+   Findings Container
    ====================================================================== */
-.graph-wrapper {{
+.findings-wrapper {{
   flex: 1;
-  display: flex;
-  position: relative;
-  overflow: hidden;
-}}
-#graph-svg {{
-  flex: 1;
-  background: var(--bg);
-}}
-
-/* ======================================================================
-   Tooltip
-   ====================================================================== */
-.tooltip {{
-  position: absolute;
-  pointer-events: none;
-  background: rgba(13, 13, 13, 0.95);
-  backdrop-filter: blur(10px);
-  border: 1px solid var(--border-strong);
-  padding: 0.4rem 0.6rem;
-  font-size: 0.6875rem;
-  color: var(--text-primary);
-  white-space: nowrap;
-  z-index: 100;
-  opacity: 0;
-  transition: opacity 0.15s ease;
-}}
-.tooltip.visible {{ opacity: 1; }}
-
-/* ======================================================================
-   Detail Panel (right side)
-   ====================================================================== */
-.detail-panel {{
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 340px;
-  height: 100%;
-  background: rgba(13, 13, 13, 0.92);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border-left: 1px solid var(--border);
-  padding: 1.25rem;
   overflow-y: auto;
-  transform: translateX(100%);
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  z-index: 50;
+  padding: 1rem 1.5rem;
 }}
-.detail-panel.open {{ transform: translateX(0); }}
-.detail-panel-close {{
-  position: absolute;
-  top: 0.75rem;
-  right: 0.75rem;
-  background: none;
-  border: 1px solid var(--border);
-  color: var(--text-tertiary);
-  width: 28px;
-  height: 28px;
+.findings-toolbar {{
   display: flex;
   align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  font-size: 0.875rem;
-  font-family: inherit;
-  transition: color 0.15s, border-color 0.15s;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
 }}
-.detail-panel-close:hover {{
-  color: var(--text-primary);
+.findings-count {{
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  margin-left: auto;
+}}
+.finding-card {{
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  padding: 0.875rem 1rem;
+  margin-bottom: 0.5rem;
+  transition: border-color 0.15s;
+}}
+.finding-card:hover {{
   border-color: var(--border-strong);
 }}
-.detail-title {{
-  font-size: 0.625rem;
-  font-weight: 600;
-  color: var(--text-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 0.15em;
-  margin-bottom: 1rem;
+.finding-header {{
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
 }}
-.detail-field {{
-  margin-bottom: 0.875rem;
+.finding-metric {{
+  font-size: 0.6875rem;
+  font-weight: 700;
+  padding: 0.15rem 0.4rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  letter-spacing: 0.05em;
 }}
-.detail-field-label {{
+.finding-severity {{
   font-size: 0.5625rem;
-  color: var(--text-tertiary);
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  margin-bottom: 0.25rem;
+  padding: 0.15rem 0.4rem;
+  border: 1px solid;
 }}
-.detail-field-value {{
+.finding-severity.critical {{ color: #f87171; border-color: rgba(248,113,113,0.4); background: rgba(248,113,113,0.1); }}
+.finding-severity.high {{ color: #fb923c; border-color: rgba(251,146,60,0.4); background: rgba(251,146,60,0.1); }}
+.finding-severity.medium {{ color: #fbbf24; border-color: rgba(251,191,36,0.4); background: rgba(251,191,36,0.1); }}
+.finding-severity.low {{ color: #34d399; border-color: rgba(52,211,153,0.4); background: rgba(52,211,153,0.1); }}
+.finding-location {{
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  margin-left: auto;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+}}
+.finding-what {{
   font-size: 0.8125rem;
   color: var(--text-primary);
-  word-break: break-all;
+  margin-bottom: 0.375rem;
   line-height: 1.4;
+}}
+.finding-detail {{
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}}
+.finding-detail strong {{
+  color: var(--text-tertiary);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.5625rem;
+  letter-spacing: 0.05em;
+}}
+.no-findings {{
+  text-align: center;
+  padding: 3rem;
+  color: var(--text-tertiary);
+  font-size: 0.875rem;
 }}
 
 /* Badges */
@@ -1108,37 +1122,41 @@ html, body {{
   color: #fbbf24;
 }}
 
-/* ======================================================================
-   Legend
-   ====================================================================== */
-.legend {{
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  margin-left: auto;
-}}
-.legend-item {{
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-size: 0.625rem;
-  color: var(--text-tertiary);
-}}
-.legend-dot {{
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}}
 
 /* ======================================================================
-   Pulsating animation for entry points
+   Download Button
    ====================================================================== */
-@keyframes pulse-ring {{
-  0% {{ r: 7; opacity: 0.6; }}
-  100% {{ r: 14; opacity: 0; }}
+.btn-back {{
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 0.6875rem;
+  font-family: inherit;
+  padding: 0.25rem 0.6rem;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  margin-left: 0.5rem;
 }}
-.node-pulse {{
-  animation: pulse-ring 2s ease-out infinite;
+.btn-back:hover {{
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+  background: var(--surface-3);
+}}
+.btn-download {{
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 0.6875rem;
+  font-family: inherit;
+  padding: 0.25rem 0.6rem;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  margin-left: 0.5rem;
+}}
+.btn-download:hover {{
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }}
 
 /* ======================================================================
@@ -1161,16 +1179,20 @@ html, body {{
     <span class="dot-corner bl"></span>
     <span class="dot-corner br"></span>
     <div class="hud-panel-header">
-      <div class="hud-panel-title">CSQA &middot; CODE QUALITY AND SECURITY ASSESSMENT</div>
+      <div class="hud-panel-title">CSQA &middot; ОЦЕНКА КАЧЕСТВА И БЕЗОПАСНОСТИ КОДА</div>
       <div class="hud-panel-tabs">
         <button class="btn-clipped active" data-tab="dashboard" onclick="switchTab('dashboard')">Дашборд</button>
-        <button class="btn-clipped" data-tab="graph" onclick="switchTab('graph')">Граф</button>
+        <button class="btn-clipped" data-tab="findings" onclick="switchTab('findings')">Дефекты</button>
       </div>
       <div class="hud-panel-meta">
-        <span>repo: <b>{_escape_html(meta["repo_name"])}</b></span>
-        <span class="meta-secondary">mode: <b>{_escape_html(meta["mode"])}</b></span>
-        <span class="meta-secondary">commit: <b>{_escape_html(commit_short)}</b></span>
-        <span class="meta-secondary">generated: <b>{_escape_html(meta["generated_at"])}</b></span>
+        <span>репозиторий: <b>{_escape_html(meta["repo_name"])}</b></span>
+        # <span class="meta-secondary">mode: <b>{_escape_html(meta["mode"])}</b></span>
+        <span class="meta-secondary">коммит: <b>{_escape_html(commit_short)}</b></span>
+        <span class="meta-secondary">дата: <b>{_escape_html(meta["generated_at"])}</b></span>
+        <button class="btn-back" id="btn-back" onclick="goHome()" style="display:none"
+                title="Вернуться к выбору репозитория">&#8592; Новый анализ</button>
+        <button class="btn-download" id="btn-download" onclick="downloadReport()" style="display:none"
+                title="Скачать отчёт как HTML-файл">&#8681; Скачать</button>
       </div>
     </div>
   </div>
@@ -1183,14 +1205,6 @@ html, body {{
       <div class="radar-container">
         <svg id="radar-svg" width="420" height="420"></svg>
         <div class="summary-stats">
-          <div>
-            <div class="summary-stat-label">Узлы</div>
-            <div class="summary-stat-value">{summary["nodes"]}</div>
-          </div>
-          <div>
-            <div class="summary-stat-label">Связи</div>
-            <div class="summary-stat-value">{summary["edges"]}</div>
-          </div>
           <div>
             <div class="summary-stat-label" title="HTTP-эндпоинты и другие публичные методы, доступные извне">Точки входа</div>
             <div class="summary-stat-value" style="color:var(--accent)">{summary["entrypoints"]}</div>
@@ -1214,52 +1228,40 @@ html, body {{
   </div>
 
   <!-- ================================================================
-       Graph Tab
+       Findings Tab
        ================================================================ -->
-  <div id="tab-graph" class="tab-content" data-tab-type="graph">
+  <div id="tab-findings" class="tab-content" data-tab-type="findings">
 
     <!-- Toolbar -->
-    <div class="toolbar">
-      <span class="toolbar-label">Фильтр:</span>
-      <button class="btn-clipped active" data-filter="all" onclick="setFilter('all')">Все</button>
-      <button class="btn-clipped" data-filter="entrypoints" onclick="setFilter('entrypoints')">Точки входа</button>
-      <button class="btn-clipped" data-filter="sinks" onclick="setFilter('sinks')">Приёмники</button>
-      <button class="btn-clipped" data-filter="hide-tests" onclick="setFilter('hide-tests')">Скрыть тесты</button>
+    <div class="findings-toolbar">
+      <span class="toolbar-label">Группа:</span>
+      <button class="btn-clipped active" data-group="all" onclick="setGroupFilter('all')">Все</button>
+      <button class="btn-clipped" data-group="A" onclick="setGroupFilter('A')">A</button>
+      <button class="btn-clipped" data-group="B" onclick="setGroupFilter('B')">B</button>
+      <button class="btn-clipped" data-group="C" onclick="setGroupFilter('C')">C</button>
+      <button class="btn-clipped" data-group="D" onclick="setGroupFilter('D')">D</button>
+      <button class="btn-clipped" data-group="E" onclick="setGroupFilter('E')">E</button>
+      <button class="btn-clipped" data-group="F" onclick="setGroupFilter('F')">F</button>
 
       <div class="toolbar-separator"></div>
 
-      <span class="toolbar-label">Подсветка:</span>
-      <select id="metric-overlay-select" class="metric-select" onchange="setMetricOverlay(this.value)">
-        <option value="topology">По типу узла</option>
-      </select>
-      <span class="overlay-info" id="overlay-info"></span>
+      <span class="toolbar-label">Серьёзность:</span>
+      <button class="btn-clipped active" data-sev="all" onclick="setSevFilter('all')">Все</button>
+      <button class="btn-clipped" data-sev="critical" onclick="setSevFilter('critical')">Critical</button>
+      <button class="btn-clipped" data-sev="high" onclick="setSevFilter('high')">High</button>
+      <button class="btn-clipped" data-sev="medium" onclick="setSevFilter('medium')">Medium</button>
+      <button class="btn-clipped" data-sev="low" onclick="setSevFilter('low')">Low</button>
 
-      <div class="legend">
-        <div class="legend-item"><div class="legend-dot" style="background:#fb923c"></div>Точка входа</div>
-        <div class="legend-item"><div class="legend-dot" style="background:#f87171"></div>Приёмник</div>
-        <div class="legend-item"><div class="legend-dot" style="background:#6b6b6b"></div>Метод</div>
-        <div class="legend-item"><div class="legend-dot" style="background:#6b6b6b;opacity:0.3"></div>Тест</div>
-      </div>
+      <span class="findings-count" id="findings-count"></span>
     </div>
 
-    <!-- Graph Area -->
-    <div class="graph-wrapper">
-      <svg id="graph-svg"></svg>
-      <div class="tooltip" id="tooltip"></div>
-
-      <!-- Detail Panel -->
-      <div class="detail-panel" id="detail-panel">
-        <button class="detail-panel-close" onclick="closeDetail()">&times;</button>
-        <div class="detail-title">Информация об узле</div>
-        <div id="detail-content"></div>
-      </div>
-    </div>
+    <!-- Findings List -->
+    <div class="findings-wrapper" id="findings-list"></div>
 
   </div>
 
 </div>
 
-<script src="https://d3js.org/d3.v7.min.js" integrity="sha384-CjloA8y00+1SDAUkjs099PVfnY2KmDC2BZnws9kh8D/lX1s46w6EPhpXdqMfjK6i" crossorigin="anonymous"></script>
 <script>
 // =========================================================================
 //  Data
@@ -1269,29 +1271,20 @@ const GRAPH_DATA = {data_json};
 // =========================================================================
 //  Constants
 // =========================================================================
-const NODE_STYLE = {{
-  entrypoint: {{ r: 7, fill: '#fb923c', opacity: 1 }},
-  sink:       {{ r: 7, fill: '#f87171', opacity: 1 }},
-  test:       {{ r: 2, fill: '#6b6b6b', opacity: 0.3 }},
-  regular:    {{ r: 3, fill: '#6b6b6b', opacity: 1 }},
-}};
-
 const GROUP_NAMES = {{
   A: 'Поверхность атаки',
   B: 'Глубина защиты',
   C: 'Потоки данных',
   D: 'Технологические границы',
+  E: 'Зависимости',
   F: 'Изменяемость',
 }};
 
 // =========================================================================
 //  State
 // =========================================================================
-let currentFilter = 'all';
-let currentOverlay = 'topology';
-let overlayMin = 0;
-let overlayMax = 1;
-let selectedNode = null;
+let currentGroupFilter = 'all';
+let currentSevFilter = 'all';
 
 // =========================================================================
 //  Helpers
@@ -1336,39 +1329,13 @@ function switchTab(tabId) {{
   document.querySelectorAll('.hud-panel-tabs .btn-clipped').forEach(btn => btn.classList.remove('active'));
   document.getElementById('tab-' + tabId).classList.add('active');
   document.querySelector('.hud-panel-tabs .btn-clipped[data-tab="' + tabId + '"]').classList.add('active');
-  if (tabId === 'graph') {{
-    const w = svg.node().parentElement.clientWidth;
-    const h = svg.node().parentElement.clientHeight;
-    svg.attr('viewBox', [0, 0, w, h]);
-    simulation.force('center', d3.forceCenter(w / 2, h / 2));
-    simulation.alpha(0.3).restart();
-  }}
 }}
 
 // =========================================================================
-//  Populate metric overlay select
-// =========================================================================
-(function populateOverlaySelect() {{
-  const sel = document.getElementById('metric-overlay-select');
-  const metricsMap = GRAPH_DATA.all_metrics;
-  const overlays = GRAPH_DATA.metric_overlays;
-  const ids = Object.keys(metricsMap).sort();
-  ids.forEach(mid => {{
-    const m = metricsMap[mid];
-    if (m.status === 'ok') {{
-      const opt = document.createElement('option');
-      opt.value = mid;
-      opt.textContent = mid + ' — ' + m.name;
-      sel.appendChild(opt);
-    }}
-  }});
-}})();
-
-// =========================================================================
-//  Build Radar Chart
+//  Build Radar Chart (pure SVG, no D3)
 // =========================================================================
 (function buildRadar() {{
-  const radarSvg = d3.select('#radar-svg');
+  const svgEl = document.getElementById('radar-svg');
   const W = 420, H = 420;
   const cx = W / 2, cy = H / 2;
   const R = 150;
@@ -1376,97 +1343,88 @@ function switchTab(tabId) {{
   const n = data.length;
   const angleSlice = (2 * Math.PI) / n;
   const levels = [0.25, 0.5, 0.75, 1.0];
-  const gRadar = radarSvg.append('g').attr('transform', `translate(${{cx}},${{cy}})`);
+  const ns = 'http://www.w3.org/2000/svg';
 
-  // Grid polygons
+  function svgCreate(tag, attrs) {{
+    const el = document.createElementNS(ns, tag);
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+    return el;
+  }}
+
+  const gRadar = svgCreate('g', {{ transform: `translate(${{cx}},${{cy}})` }});
+  svgEl.appendChild(gRadar);
+
   levels.forEach(lv => {{
     const pts = [];
     for (let i = 0; i < n; i++) {{
       const angle = angleSlice * i - Math.PI / 2;
-      pts.push([R * lv * Math.cos(angle), R * lv * Math.sin(angle)]);
+      pts.push(`${{R * lv * Math.cos(angle)}},${{R * lv * Math.sin(angle)}}`);
     }}
-    gRadar.append('polygon')
-      .attr('points', pts.map(p => p.join(',')).join(' '))
-      .attr('fill', 'none')
-      .attr('stroke', 'rgba(255,255,255,0.12)')
-      .attr('stroke-width', lv === 1.0 ? 1.5 : 0.5)
-      .attr('stroke-dasharray', lv === 1.0 ? 'none' : '2,3');
+    gRadar.appendChild(svgCreate('polygon', {{
+      points: pts.join(' '), fill: 'none',
+      stroke: 'rgba(255,255,255,0.12)',
+      'stroke-width': lv === 1.0 ? 1.5 : 0.5,
+      'stroke-dasharray': lv === 1.0 ? 'none' : '2,3'
+    }}));
 
-    // Level label on first axis
-    const labelAngle = angleSlice * 0 - Math.PI / 2;
-    gRadar.append('text')
-      .attr('x', R * lv * Math.cos(labelAngle) + 6)
-      .attr('y', R * lv * Math.sin(labelAngle) - 4)
-      .attr('fill', 'rgba(255,255,255,0.25)')
-      .attr('font-size', '9px')
-      .attr('font-family', 'JetBrains Mono, monospace')
-      .text(Math.round(lv * 100) + '%');
+    const la = angleSlice * 0 - Math.PI / 2;
+    const txt = svgCreate('text', {{
+      x: R * lv * Math.cos(la) + 6, y: R * lv * Math.sin(la) - 4,
+      fill: 'rgba(255,255,255,0.25)', 'font-size': '9px',
+      'font-family': 'JetBrains Mono, monospace'
+    }});
+    txt.textContent = Math.round(lv * 100) + '%';
+    gRadar.appendChild(txt);
   }});
 
-  // Axis lines + labels
   data.forEach((d, i) => {{
     const angle = angleSlice * i - Math.PI / 2;
-    const x2 = R * Math.cos(angle);
-    const y2 = R * Math.sin(angle);
-    gRadar.append('line')
-      .attr('x1', 0).attr('y1', 0)
-      .attr('x2', x2).attr('y2', y2)
-      .attr('stroke', 'rgba(255,255,255,0.1)')
-      .attr('stroke-width', 1);
-
-    // Group letter label
+    gRadar.appendChild(svgCreate('line', {{
+      x1: 0, y1: 0, x2: R * Math.cos(angle), y2: R * Math.sin(angle),
+      stroke: 'rgba(255,255,255,0.1)', 'stroke-width': 1
+    }}));
     const lx = (R + 18) * Math.cos(angle);
     const ly = (R + 18) * Math.sin(angle);
-    gRadar.append('text')
-      .attr('x', lx).attr('y', ly)
-      .attr('text-anchor', 'middle')
-      .attr('dominant-baseline', 'central')
-      .attr('fill', '#e5e5e5')
-      .attr('font-size', '13px')
-      .attr('font-weight', '700')
-      .attr('font-family', 'JetBrains Mono, monospace')
-      .text(d.group);
+    const lbl = svgCreate('text', {{
+      x: lx, y: ly, 'text-anchor': 'middle', 'dominant-baseline': 'central',
+      fill: '#e5e5e5', 'font-size': '13px', 'font-weight': '700',
+      'font-family': 'JetBrains Mono, monospace'
+    }});
+    lbl.textContent = d.group;
+    gRadar.appendChild(lbl);
 
-    // Value label near dot
-    const v = (d.value !== null && d.value !== undefined) ? d.value : null;
+    const v = d.value != null ? d.value : null;
     if (v !== null) {{
       const vx = (R * v + 10) * Math.cos(angle);
       const vy = (R * v + 10) * Math.sin(angle);
-      gRadar.append('text')
-        .attr('x', vx).attr('y', vy)
-        .attr('text-anchor', 'middle')
-        .attr('dominant-baseline', 'central')
-        .attr('fill', riskBarColor(v))
-        .attr('font-size', '9px')
-        .attr('font-weight', '600')
-        .attr('font-family', 'JetBrains Mono, monospace')
-        .text(Math.round(v * 100) + '%');
+      const vt = svgCreate('text', {{
+        x: vx, y: vy, 'text-anchor': 'middle', 'dominant-baseline': 'central',
+        fill: riskBarColor(v), 'font-size': '9px', 'font-weight': '600',
+        'font-family': 'JetBrains Mono, monospace'
+      }});
+      vt.textContent = Math.round(v * 100) + '%';
+      gRadar.appendChild(vt);
     }}
   }});
 
-  // Data area polygon
-  const valuePts = [];
-  data.forEach((d, i) => {{
-    const v = (d.value !== null && d.value !== undefined) ? Math.min(1, Math.max(0, d.value)) : 0;
+  const valuePts = data.map((d, i) => {{
+    const v = d.value != null ? Math.min(1, Math.max(0, d.value)) : 0;
     const angle = angleSlice * i - Math.PI / 2;
-    valuePts.push([R * v * Math.cos(angle), R * v * Math.sin(angle)]);
+    return `${{R * v * Math.cos(angle)}},${{R * v * Math.sin(angle)}}`;
   }});
-  gRadar.append('polygon')
-    .attr('points', valuePts.map(p => p.join(',')).join(' '))
-    .attr('fill', 'rgba(251,146,60,0.12)')
-    .attr('stroke', '#fb923c')
-    .attr('stroke-width', 2);
+  gRadar.appendChild(svgCreate('polygon', {{
+    points: valuePts.join(' '), fill: 'rgba(251,146,60,0.12)',
+    stroke: '#fb923c', 'stroke-width': 2
+  }}));
 
-  // Dots on vertices
-  valuePts.forEach((p, i) => {{
-    const v = data[i].value;
-    if (v !== null && v !== undefined) {{
-      gRadar.append('circle')
-        .attr('cx', p[0]).attr('cy', p[1])
-        .attr('r', 4)
-        .attr('fill', '#fb923c')
-        .attr('stroke', '#000')
-        .attr('stroke-width', 1.5);
+  data.forEach((d, i) => {{
+    if (d.value != null) {{
+      const v = Math.min(1, Math.max(0, d.value));
+      const angle = angleSlice * i - Math.PI / 2;
+      gRadar.appendChild(svgCreate('circle', {{
+        cx: R * v * Math.cos(angle), cy: R * v * Math.sin(angle),
+        r: 4, fill: '#fb923c', stroke: '#000', 'stroke-width': 1.5
+      }}));
     }}
   }});
 }})();
@@ -1481,7 +1439,7 @@ function switchTab(tabId) {{
     if (!groups[m.group]) groups[m.group] = [];
     groups[m.group].push(m);
   }});
-  const groupOrder = ['A', 'B', 'C', 'D', 'F'];
+  const groupOrder = ['A', 'B', 'C', 'D', 'E', 'F'];
   groupOrder.forEach(gid => {{
     const items = groups[gid];
     if (!items) return;
@@ -1489,20 +1447,17 @@ function switchTab(tabId) {{
     grp.className = 'metrics-group';
     const hdr = document.createElement('div');
     hdr.className = 'metrics-group-header';
-    hdr.textContent = gid + ' — ' + (GROUP_NAMES[gid] || gid);
+    hdr.textContent = gid + ' \u2014 ' + (GROUP_NAMES[gid] || gid);
     grp.appendChild(hdr);
     const row = document.createElement('div');
     row.className = 'metrics-group-row';
     items.forEach(m => {{
       const card = document.createElement('div');
       card.className = 'metric-card' + (m.status !== 'ok' ? ' disabled' : '');
-      if (m.status === 'ok') {{
-        card.onclick = function() {{
-          switchTab('graph');
-          setMetricOverlay(m.id);
-          document.getElementById('metric-overlay-select').value = m.id;
-        }};
-      }}
+      card.onclick = function() {{
+        switchTab('findings');
+        setGroupFilter(gid);
+      }};
       const val = m.value !== null ? m.value : 0;
       const pct = Math.round(val * 100);
       card.innerHTML =
@@ -1521,486 +1476,96 @@ function switchTab(tabId) {{
 }})();
 
 // =========================================================================
-//  Build D3 Graph
+//  Build Findings List
 // =========================================================================
-const svg = d3.select('#graph-svg');
+function renderFindings() {{
+  const list = document.getElementById('findings-list');
+  const countEl = document.getElementById('findings-count');
+  const findings = GRAPH_DATA.findings || [];
 
-/* Initial size: use window dimensions since the graph tab may be hidden */
-const initW = window.innerWidth;
-const initH = window.innerHeight;
-
-svg.attr('viewBox', [0, 0, initW, initH]);
-
-const g = svg.append('g');
-
-// Zoom
-const zoom = d3.zoom()
-  .scaleExtent([0.1, 8])
-  .on('zoom', (event) => {{
-    g.attr('transform', event.transform);
-  }});
-svg.call(zoom);
-
-// Build node index
-const nodeIndex = new Map();
-GRAPH_DATA.nodes.forEach((n, i) => {{ nodeIndex.set(n.id, i); }});
-
-// Filter edges to only include those whose source/target exist in nodes
-const validEdges = GRAPH_DATA.edges.filter(e => nodeIndex.has(e.source) && nodeIndex.has(e.target));
-
-// Simulation
-const simulation = d3.forceSimulation(GRAPH_DATA.nodes)
-  .force('link', d3.forceLink(validEdges).id(d => d.id).distance(40).strength(0.3))
-  .force('charge', d3.forceManyBody().strength(-60).distanceMax(300))
-  .force('center', d3.forceCenter(initW / 2, initH / 2))
-  .force('collision', d3.forceCollide().radius(d => NODE_STYLE[d.type].r + 1))
-  .alphaDecay(0.03);
-
-svg.append('defs');
-
-// Draw edges
-const linkG = g.append('g').attr('class', 'links');
-const links = linkG.selectAll('line')
-  .data(validEdges)
-  .join('line')
-  .attr('stroke', '#555')
-  .attr('stroke-width', 0.5)
-  .attr('stroke-opacity', 0.8);
-
-// Draw nodes
-const nodeG = g.append('g').attr('class', 'nodes');
-
-// Pulse rings for entrypoints
-const pulseG = g.append('g').attr('class', 'pulses');
-const pulses = pulseG.selectAll('circle')
-  .data(GRAPH_DATA.nodes.filter(d => d.type === 'entrypoint'))
-  .join('circle')
-  .attr('r', 7)
-  .attr('fill', 'none')
-  .attr('stroke', '#fb923c')
-  .attr('stroke-width', 1)
-  .attr('opacity', 0.6)
-  .each(function() {{
-    const el = d3.select(this);
-    function animatePulse() {{
-      el.attr('r', 7).attr('opacity', 0.6)
-        .transition().duration(2000).ease(d3.easeQuadOut)
-        .attr('r', 16).attr('opacity', 0)
-        .on('end', animatePulse);
-    }}
-    animatePulse();
+  const filtered = findings.filter(f => {{
+    const group = (f.metric || '').charAt(0);
+    if (currentGroupFilter !== 'all' && group !== currentGroupFilter) return false;
+    if (currentSevFilter !== 'all' && f.severity !== currentSevFilter) return false;
+    return true;
   }});
 
-const nodes = nodeG.selectAll('circle')
-  .data(GRAPH_DATA.nodes)
-  .join('circle')
-  .attr('r', d => NODE_STYLE[d.type].r)
-  .attr('fill', d => NODE_STYLE[d.type].fill)
-  .attr('opacity', d => NODE_STYLE[d.type].opacity)
-  .attr('stroke', 'none')
-  .attr('stroke-width', 0)
-  .style('cursor', 'pointer')
-  .call(d3.drag()
-    .on('start', dragStarted)
-    .on('drag', dragged)
-    .on('end', dragEnded)
-  );
+  countEl.textContent = filtered.length + ' / ' + findings.length;
 
-// Tooltip
-const tooltip = document.getElementById('tooltip');
-
-nodes
-  .on('mouseenter', (event, d) => {{
-    tooltip.textContent = d.label;
-    tooltip.classList.add('visible');
-  }})
-  .on('mousemove', (event) => {{
-    const rect = svg.node().parentElement.getBoundingClientRect();
-    tooltip.style.left = (event.clientX - rect.left + 12) + 'px';
-    tooltip.style.top = (event.clientY - rect.top - 8) + 'px';
-  }})
-  .on('mouseleave', () => {{
-    tooltip.classList.remove('visible');
-  }})
-  .on('click', (event, d) => {{
-    event.stopPropagation();
-    selectNode(d);
-  }});
-
-svg.on('click', () => {{
-  deselectNode();
-  closeDetail();
-}});
-
-// Simulation tick
-simulation.on('tick', () => {{
-  links
-    .attr('x1', d => d.source.x)
-    .attr('y1', d => d.source.y)
-    .attr('x2', d => d.target.x)
-    .attr('y2', d => d.target.y);
-
-  nodes
-    .attr('cx', d => d.x)
-    .attr('cy', d => d.y);
-
-  pulses
-    .attr('cx', d => d.x)
-    .attr('cy', d => d.y);
-}});
-
-// =========================================================================
-//  Drag handlers
-// =========================================================================
-function dragStarted(event, d) {{
-  if (!event.active) simulation.alphaTarget(0.3).restart();
-  d.fx = d.x;
-  d.fy = d.y;
-}}
-
-function dragged(event, d) {{
-  d.fx = event.x;
-  d.fy = event.y;
-}}
-
-function dragEnded(event, d) {{
-  if (!event.active) simulation.alphaTarget(0);
-  d.fx = null;
-  d.fy = null;
-}}
-
-// =========================================================================
-//  Selection
-// =========================================================================
-function selectNode(d) {{
-  selectedNode = d;
-
-  // Reset stroke
-  nodes
-    .attr('stroke', 'none')
-    .attr('stroke-width', 0);
-
-  // Reset edges depending on overlay mode
-  if (currentOverlay === 'topology') {{
-    links
-      .attr('stroke', '#555')
-      .attr('stroke-width', 0.5)
-      .attr('stroke-opacity', 0.8);
-  }}
-
-  // Highlight selected node
-  nodes.filter(n => n.id === d.id)
-    .attr('stroke', '#fb923c')
-    .attr('stroke-width', 2);
-
-  // Highlight connected edges
-  links.filter(l => l.source.id === d.id || l.target.id === d.id)
-    .attr('stroke', '#fb923c')
-    .attr('stroke-width', 1.5)
-    .attr('stroke-opacity', 1);
-
-  showDetail(d);
-}}
-
-function deselectNode() {{
-  selectedNode = null;
-  nodes.attr('stroke', 'none').attr('stroke-width', 0);
-  if (currentOverlay === 'topology') {{
-    links.attr('stroke', '#555').attr('stroke-width', 0.5).attr('stroke-opacity', 0.8);
-  }} else {{
-    links.attr('stroke', '#555').attr('stroke-width', 0.5).attr('stroke-opacity', 0.15);
-  }}
-}}
-
-// =========================================================================
-//  Detail panel
-// =========================================================================
-function showDetail(d) {{
-  const panel = document.getElementById('detail-panel');
-  const content = document.getElementById('detail-content');
-
-  const typeLabels = {{
-    entrypoint: '<span class="badge accent">Точка входа</span>',
-    sink: '<span class="badge danger">Приёмник данных</span>',
-    test: '<span class="badge warning">Тест</span>',
-    regular: '<span class="badge">Метод</span>',
-  }};
-
-  let html = `
-    <div class="detail-field">
-      <div class="detail-field-label">Тип</div>
-      <div class="detail-field-value">${{typeLabels[d.type]}}</div>
-    </div>
-    <div class="detail-field">
-      <div class="detail-field-label">Краткое имя</div>
-      <div class="detail-field-value">${{escapeHtml(d.label)}}</div>
-    </div>
-    <div class="detail-field">
-      <div class="detail-field-label">Полный идентификатор</div>
-      <div class="detail-field-value" style="font-size:0.6875rem">${{escapeHtml(d.id)}}</div>
-    </div>
-  `;
-
-  // Connected edges count
-  const inCount = validEdges.filter(e => (e.target.id || e.target) === d.id).length;
-  const outCount = validEdges.filter(e => (e.source.id || e.source) === d.id).length;
-  html += `
-    <div class="detail-field">
-      <div class="detail-field-label">Связи</div>
-      <div class="detail-field-value">
-        <span class="badge">входящих: ${{inCount}}</span>
-        <span class="badge">исходящих: ${{outCount}}</span>
-      </div>
-    </div>
-  `;
-
-  // A1 entrypoint details
-  const ep = GRAPH_DATA.entrypoint_details[d.id];
-  if (ep) {{
-    const a1Info = GRAPH_DATA.all_metrics['A1'];
-    html += `
-      <div class="detail-metric-info">
-        <div class="detail-metric-header">
-          <span class="detail-metric-id">A1</span>
-          <span class="detail-metric-name">${{escapeHtml(a1Info ? a1Info.title : 'ASE')}}</span>
-        </div>
-        <div class="detail-field-value" style="margin-bottom:0.5rem">
-          <span class="badge ${{ep.has_auth ? 'success' : 'danger'}}">${{ep.has_auth ? 'auth: да' : 'auth: нет'}}</span>
-          <span class="badge ${{ep.has_validation ? 'success' : 'danger'}}">${{ep.has_validation ? 'валидация: да' : 'валидация: нет'}}</span>
-        </div>
-        <div class="detail-field-label">Оценка ASE на узле</div>
-        <div class="detail-field-value" style="color:var(--accent);margin-bottom:0.35rem">${{Math.round(ep.score * 100)}}%</div>
-        ${{a1Info && a1Info.detail ? '<div class="detail-metric-desc">' + escapeHtml(a1Info.detail) + '</div>' : ''}}
-      </div>
-    `;
-  }}
-
-  // Active metric overlay details (skip if A1 already shown via entrypoint block)
-  if (currentOverlay !== 'topology' && !(currentOverlay === 'A1' && ep)) {{
-    const overlayData = GRAPH_DATA.metric_overlays[currentOverlay];
-    const metricInfo = GRAPH_DATA.all_metrics[currentOverlay];
-    if (metricInfo) {{
-      const nodeVal = overlayData ? overlayData[d.id] : undefined;
-      const oRange = overlayMax - overlayMin || 1;
-      const normVal = nodeVal !== undefined ? (nodeVal - overlayMin) / oRange : undefined;
-      const sysValStr = metricInfo.value !== null ? (metricInfo.value * 100).toFixed(1) + '%' : 'N/A';
-      html += `
-        <div class="detail-metric-info">
-          <div class="detail-metric-header">
-            <span class="detail-metric-id">${{escapeHtml(currentOverlay)}}</span>
-            <span class="detail-metric-name">${{escapeHtml(metricInfo.title)}}</span>
-          </div>
-          <div class="detail-field-label">Значение на узле</div>
-          <div class="detail-field-value" style="color:${{nodeVal !== undefined ? riskColor(nodeVal) : 'var(--text-tertiary)'}};margin-bottom:0.35rem">
-            ${{nodeVal !== undefined ? Math.round(nodeVal * 100) + '%' : 'нет данных по узлу'}}
-          </div>
-          <div class="detail-field-label">Системное значение</div>
-          <div class="detail-field-value" style="margin-bottom:0.5rem">${{sysValStr}}</div>
-          ${{metricInfo.detail ? '<div class="detail-metric-desc">' + escapeHtml(metricInfo.detail) + '</div>' : ''}}
-        </div>
-      `;
-    }}
-  }}
-
-  content.innerHTML = html;
-  panel.classList.add('open');
-}}
-
-function closeDetail() {{
-  document.getElementById('detail-panel').classList.remove('open');
-}}
-
-// =========================================================================
-//  Metric Overlay System
-// =========================================================================
-function setMetricOverlay(metricId) {{
-  currentOverlay = metricId;
-  document.getElementById('metric-overlay-select').value = metricId;
-  const t = d3.transition().duration(400);
-
-  if (metricId === 'topology') {{
-    // Restore original topology view
-    nodes.transition(t)
-      .attr('fill', d => NODE_STYLE[d.type].fill)
-      .attr('r', d => getNodeRadius(d))
-      .attr('opacity', d => getNodeOpacity(d));
-    links.transition(t)
-      .attr('stroke', '#555')
-      .attr('stroke-opacity', d => {{
-        const srcVis = isNodeVisible(d.source);
-        const tgtVis = isNodeVisible(d.target);
-        return (srcVis && tgtVis) ? 0.8 : 0.05;
-      }});
-    pulses.transition(t).attr('opacity', 0.6);
-    updateOverlayInfo(null);
+  if (filtered.length === 0) {{
+    list.innerHTML = '<div class="no-findings">Дефекты не обнаружены (или отфильтрованы)</div>';
     return;
   }}
 
-  const metricInfo = GRAPH_DATA.all_metrics[metricId];
-  const overlayData = GRAPH_DATA.metric_overlays[metricId];
-
-  if (overlayData) {{
-    // Normalize overlay values to [0, 1] for color and size
-    const vals = Object.values(overlayData);
-    const oMin = Math.min(...vals);
-    const oMax = Math.max(...vals);
-    const oRange = oMax - oMin || 1;
-    overlayMin = oMin;
-    overlayMax = oMax;
-    function normalize(v) {{ return (v - oMin) / oRange; }}
-
-    nodes.transition(t)
-      .attr('fill', d => {{
-        const v = overlayData[d.id];
-        return v !== undefined ? riskColor(normalize(v)) : '#333';
-      }})
-      .attr('r', d => {{
-        if (!isNodeVisible(d)) return 1;
-        const v = overlayData[d.id];
-        return v !== undefined ? 3 + normalize(v) * 9 : 2;
-      }})
-      .attr('opacity', d => {{
-        if (!isNodeVisible(d)) return 0.03;
-        const v = overlayData[d.id];
-        return v !== undefined ? 1 : 0.15;
-      }});
-    links.transition(t)
-      .attr('stroke', '#555')
-      .attr('stroke-opacity', 0.15);
-    pulses.transition(t).attr('opacity', 0);
-  }} else {{
-    // Metric has no per-node overlay — highlight entrypoints with system color
-    const sysVal = metricInfo && metricInfo.value !== null ? metricInfo.value : 0;
-    const sysColor = riskColor(sysVal);
-    overlayMin = 0;
-    overlayMax = 1;
-    nodes.transition(t)
-      .attr('fill', d => {{
-        if (!isNodeVisible(d)) return '#333';
-        if (d.type === 'entrypoint') return sysColor;
-        if (d.type === 'sink') return sysColor;
-        return '#333';
-      }})
-      .attr('r', d => {{
-        if (!isNodeVisible(d)) return 1;
-        if (d.type === 'entrypoint') return 5 + sysVal * 5;
-        if (d.type === 'sink') return 5 + sysVal * 5;
-        return 2;
-      }})
-      .attr('opacity', d => {{
-        if (!isNodeVisible(d)) return 0.03;
-        if (d.type === 'entrypoint' || d.type === 'sink') return 1;
-        return 0.12;
-      }});
-    links.transition(t)
-      .attr('stroke', '#555')
-      .attr('stroke-opacity', 0.15);
-    pulses.transition(t).attr('opacity', 0);
-  }}
-
-  updateOverlayInfo(metricId);
-}}
-
-function updateOverlayInfo(metricId) {{
-  const infoEl = document.getElementById('overlay-info');
-  if (!metricId) {{
-    infoEl.textContent = '';
-    return;
-  }}
-  const m = GRAPH_DATA.all_metrics[metricId];
-  if (!m) {{ infoEl.textContent = ''; return; }}
-  const overlayData = GRAPH_DATA.metric_overlays[metricId];
-  const nodeCount = overlayData ? Object.keys(overlayData).length : 0;
-  const valStr = m.value !== null ? (m.value * 100).toFixed(1) + '%' : 'N/A';
-  infoEl.textContent = m.title + ' = ' + valStr + (nodeCount ? ' (' + nodeCount + ' узлов)' : ' (системная)');
-  if (m.value !== null) {{
-    infoEl.style.color = m.value < 0.3 ? 'var(--success)' : m.value < 0.7 ? '#fbbf24' : 'var(--danger)';
-  }} else {{
-    infoEl.style.color = 'var(--text-tertiary)';
-  }}
-}}
-
-// =========================================================================
-//  Filters
-// =========================================================================
-function setFilter(filter) {{
-  currentFilter = filter;
-
-  // Update buttons
-  document.querySelectorAll('.toolbar .btn-clipped[data-filter]').forEach(btn => {{
-    btn.classList.toggle('active', btn.dataset.filter === filter);
+  let html = '';
+  filtered.forEach(f => {{
+    const loc = f.file ? (f.file + (f.line ? ':' + f.line : '')) : '';
+    html += '<div class="finding-card">' +
+      '<div class="finding-header">' +
+        '<span class="finding-metric">' + escapeHtml(f.metric || '') + '</span>' +
+        '<span class="finding-severity ' + (f.severity || 'low') + '">' + escapeHtml(f.severity || 'low') + '</span>' +
+        (f.method ? '<span style="font-size:0.6875rem;color:var(--text-secondary)">' + escapeHtml(f.method) + '</span>' : '') +
+        (loc ? '<span class="finding-location">' + escapeHtml(loc) + '</span>' : '') +
+      '</div>' +
+      '<div class="finding-what">' + escapeHtml(f.what || '') + '</div>' +
+      '<div class="finding-detail">' +
+        '<strong>Почему: </strong>' + escapeHtml(f.why || '') + '<br>' +
+        '<strong>Исправление: </strong>' + escapeHtml(f.fix || '') +
+      '</div>' +
+    '</div>';
   }});
-
-  applyFilter();
+  list.innerHTML = html;
 }}
 
-function applyFilter() {{
-  const t = d3.transition().duration(300);
-
-  if (currentOverlay !== 'topology' && GRAPH_DATA.metric_overlays[currentOverlay]) {{
-    // Re-apply overlay with current filter
-    setMetricOverlay(currentOverlay);
-    return;
-  }}
-
-  nodes.transition(t)
-    .attr('opacity', d => getNodeOpacity(d))
-    .attr('r', d => getNodeRadius(d));
-
-  pulses.transition(t)
-    .attr('opacity', d => currentFilter === 'sinks' ? 0 : 0.6);
-
-  links.transition(t)
-    .attr('stroke-opacity', d => {{
-      const srcVisible = isNodeVisible(d.source);
-      const tgtVisible = isNodeVisible(d.target);
-      return (srcVisible && tgtVisible) ? 0.8 : 0.05;
-    }});
-
-  // Re-apply selection highlight if any
-  if (selectedNode) {{
-    links.filter(l => l.source.id === selectedNode.id || l.target.id === selectedNode.id)
-      .transition(t)
-      .attr('stroke', '#fb923c')
-      .attr('stroke-width', 1.5)
-      .attr('stroke-opacity', 1);
-  }}
+function setGroupFilter(group) {{
+  currentGroupFilter = group;
+  document.querySelectorAll('.findings-toolbar .btn-clipped[data-group]').forEach(btn => {{
+    btn.classList.toggle('active', btn.dataset.group === group);
+  }});
+  renderFindings();
 }}
 
-function isNodeVisible(d) {{
-  switch (currentFilter) {{
-    case 'entrypoints': return d.type === 'entrypoint';
-    case 'sinks': return d.type === 'sink';
-    case 'hide-tests': return d.type !== 'test';
-    default: return true;
-  }}
+function setSevFilter(sev) {{
+  currentSevFilter = sev;
+  document.querySelectorAll('.findings-toolbar .btn-clipped[data-sev]').forEach(btn => {{
+    btn.classList.toggle('active', btn.dataset.sev === sev);
+  }});
+  renderFindings();
 }}
 
-function getNodeOpacity(d) {{
-  if (!isNodeVisible(d)) return 0.03;
-  return NODE_STYLE[d.type].opacity;
-}}
+renderFindings();
 
-function getNodeRadius(d) {{
-  if (!isNodeVisible(d)) return 1;
-  return NODE_STYLE[d.type].r;
+// =========================================================================
+//  Download Report
+// =========================================================================
+function downloadReport() {{
+  const blob = new Blob([document.documentElement.outerHTML], {{type: 'text/html;charset=utf-8'}});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'csqa-report-' + (GRAPH_DATA.meta.repo_name || 'report') + '.html';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }}
 
 // =========================================================================
-//  Resize handler
+//  Navigation — back to home (only when served over HTTP(S), not from file://)
 // =========================================================================
-let _resizeTimer;
-window.addEventListener('resize', () => {{
-  clearTimeout(_resizeTimer);
-  _resizeTimer = setTimeout(() => {{
-    if (!document.getElementById('tab-graph').classList.contains('active')) return;
-    const w = svg.node().parentElement.clientWidth;
-    const h = svg.node().parentElement.clientHeight;
-    svg.attr('viewBox', [0, 0, w, h]);
-    simulation.force('center', d3.forceCenter(w / 2, h / 2));
-    simulation.alpha(0.1).restart();
-  }}, 150);
-}});
+function goHome() {{
+  // /TOKEN/report/JOB_ID  ->  /TOKEN/
+  const parts = window.location.pathname.split('/report/');
+  window.location.href = parts[0] + '/';
+}}
+
+// Show action buttons only when served over HTTP(S)
+if (window.location.protocol !== 'file:') {{
+  const btnBack = document.getElementById('btn-back');
+  if (btnBack) btnBack.style.display = '';
+  const btnDownload = document.getElementById('btn-download');
+  if (btnDownload) btnDownload.style.display = '';
+}}
 </script>
 </body>
 </html>"""

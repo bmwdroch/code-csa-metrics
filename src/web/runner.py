@@ -19,12 +19,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # Keywords expected in container.log → (min_percent, status_message)
 # Ordered from first to last so we don't go backwards.
 _LOG_STAGES: list[tuple[str, int, str]] = [
-    ("Cloning into", 20, "Cloning repository..."),
-    ("remote: Counting", 25, "Counting objects..."),
-    ("Receiving objects", 30, "Receiving objects..."),
-    ("Resolving deltas", 38, "Resolving deltas..."),
-    ('"status": "ok"', 78, "Finalizing report..."),
-    ('"status": "error"', 78, "Analyzer finished with errors, rendering report..."),
+    ("Cloning into", 20, "Клонирование репозитория..."),
+    ("remote: Counting", 25, "Подсчёт объектов..."),
+    ("Receiving objects", 30, "Загрузка объектов..."),
+    ("Resolving deltas", 38, "Распаковка дельт..."),
+    ('"status": "ok"', 78, "Формирование отчёта..."),
+    ('"status": "error"', 78, "Анализ завершён с ошибками, формирование отчёта..."),
 ]
 
 # Slow drift: while running and no new keywords, nudge percent toward this cap
@@ -37,10 +37,9 @@ _DRIFT_INTERVAL = 8.0  # seconds between ticks
 class Job:
     id: str
     repo_url: str
-    max_nodes: int = 500
     status: str = "queued"   # queued | running | done | failed
     percent: int = 0
-    message: str = "Queued..."
+    message: str = "В очереди..."
     error: str | None = None
     created_at: float = field(default_factory=time.time)
 
@@ -62,10 +61,10 @@ class JobRunner:
 
     # ── Public API ──────────────────────────────────────────────────────────────
 
-    def start_job(self, repo_url: str, max_nodes: int = 500) -> str:
+    def start_job(self, repo_url: str) -> str:
         """Create and start a new analysis job. Returns job ID."""
         job_id = uuid.uuid4().hex[:12]
-        job = Job(id=job_id, repo_url=repo_url, max_nodes=max_nodes)
+        job = Job(id=job_id, repo_url=repo_url)
         with self._lock:
             self._jobs[job_id] = job
         t = threading.Thread(target=self._run_job, args=(job,), daemon=True)
@@ -100,7 +99,7 @@ class JobRunner:
             job.status = status
 
     def _run_job(self, job: Job) -> None:
-        self._update(job, 5, "Initializing analysis pipeline...")
+        self._update(job, 5, "Инициализация конвейера анализа...")
 
         orchestrate = REPO_ROOT / "src" / "orchestrate.py"
         out_dir_rel = f"out/web-{job.id}"
@@ -111,7 +110,6 @@ class JobRunner:
             "--mode", "fast",
             "--render-html",
             "--out-dir", out_dir_rel,
-            "--max-graph-nodes", str(job.max_nodes),
         ]
 
         try:
@@ -124,15 +122,15 @@ class JobRunner:
                 bufsize=1,
             )
         except FileNotFoundError as exc:
-            self._update(job, 0, f"Cannot start: {exc}", status="failed", force=True)
+            self._update(job, 0, f"Не удалось запустить: {exc}", status="failed", force=True)
             job.error = str(exc)
             return
         except Exception as exc:  # noqa: BLE001
-            self._update(job, 0, f"Unexpected error: {exc}", status="failed", force=True)
+            self._update(job, 0, f"Непредвиденная ошибка: {exc}", status="failed", force=True)
             job.error = str(exc)
             return
 
-        self._update(job, 10, "Starting Docker container...")
+        self._update(job, 10, "Запуск Docker-контейнера...")
 
         # Monitor container.log for progress keywords
         log_mon = threading.Thread(
@@ -164,16 +162,16 @@ class JobRunner:
         log_mon.join(timeout=3)
 
         if proc.returncode == 0:
-            self._update(job, 100, "Analysis complete!", status="done", force=True)
+            self._update(job, 100, "Анализ завершён!", status="done", force=True)
         else:
             with self._lock:
                 if job.status == "running":
                     job.status = "failed"
                     job.percent = 0
-                    job.message = f"Analysis failed (exit code {proc.returncode})"
+                    job.message = f"Ошибка анализа (код завершения {proc.returncode})"
                     job.error = (
-                        f"orchestrate.py returned exit code {proc.returncode}. "
-                        "Check that the Docker image csqa-metrics:fast is built."
+                        f"orchestrate.py завершился с кодом {proc.returncode}. "
+                        "Убедитесь, что Docker-образ csqa-metrics:fast собран."
                     )
 
     def _monitor_container_log(self, job: Job, log_path: Path) -> None:

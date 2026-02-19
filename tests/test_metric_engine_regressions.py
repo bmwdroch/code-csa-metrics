@@ -31,8 +31,8 @@ from analyzer import java_graph, metrics, render_report  # noqa: E402
 from analyzer import main as analyzer_main  # noqa: E402
 
 
-class MetricPolicyRegressionTests(unittest.TestCase):
-    def test_compute_all_metrics_disables_e1_by_policy(self) -> None:
+class MetricE1RegressionTests(unittest.TestCase):
+    def test_e1_not_available_without_build_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo_dir = Path(tmp)
             out = metrics.compute_all_metrics(
@@ -41,9 +41,73 @@ class MetricPolicyRegressionTests(unittest.TestCase):
                 mode="fast",
                 max_graph_depth=3,
             )
-        self.assertEqual(out["E1"]["status"], "disabled")
-        self.assertEqual(out["E1"]["reason"], "disabled_by_policy")
+        self.assertEqual(out["E1"]["status"], "not_available")
+        self.assertIsNone(out["E1"]["OSDR"])
         self.assertNotIn("E1", out["aggregate"]["components"])
+
+    def test_e1_returns_ok_with_pom(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_dir = Path(tmp)
+            pom = repo_dir / "pom.xml"
+            pom.write_text(
+                "<project>"
+                "<groupId>com.example</groupId>"
+                "<artifactId>app</artifactId>"
+                "<dependencies>"
+                "<dependency>"
+                "<groupId>org.springframework.boot</groupId>"
+                "<artifactId>spring-boot-starter</artifactId>"
+                "</dependency>"
+                "<dependency>"
+                "<groupId>com.obscure</groupId>"
+                "<artifactId>obscure-lib</artifactId>"
+                "</dependency>"
+                "</dependencies>"
+                "</project>",
+                encoding="utf-8",
+            )
+            out = metrics.compute_all_metrics(
+                repo_dir,
+                spec_headers=[{"id": "E1", "title": "OSDR"}],
+                mode="fast",
+                max_graph_depth=3,
+            )
+        self.assertEqual(out["E1"]["status"], "ok")
+        self.assertIsNotNone(out["E1"]["OSDR"])
+        self.assertIn("E1", out["aggregate"]["components"])
+        self.assertEqual(out["E1"]["counts"]["baseline"], 1)
+        self.assertEqual(out["E1"]["counts"]["other"], 1)
+
+    def test_e1_skips_parent_group_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_dir = Path(tmp)
+            pom = repo_dir / "pom.xml"
+            pom.write_text(
+                "<project>"
+                "<parent>"
+                "<groupId>org.springframework.boot</groupId>"
+                "<artifactId>spring-boot-starter-parent</artifactId>"
+                "<version>3.0.0</version>"
+                "</parent>"
+                "<groupId>com.mycompany</groupId>"
+                "<artifactId>my-app</artifactId>"
+                "<dependencies>"
+                "<dependency>"
+                "<groupId>com.mycompany</groupId>"
+                "<artifactId>my-util</artifactId>"
+                "</dependency>"
+                "</dependencies>"
+                "</project>",
+                encoding="utf-8",
+            )
+            out = metrics.compute_all_metrics(
+                repo_dir,
+                spec_headers=[{"id": "E1", "title": "OSDR"}],
+                mode="fast",
+                max_graph_depth=3,
+            )
+        self.assertEqual(out["E1"]["internal_prefix"], "com.mycompany")
+        self.assertEqual(out["E1"]["counts"]["internal"], 1)
 
 
 class MetricB2RegressionTests(unittest.TestCase):

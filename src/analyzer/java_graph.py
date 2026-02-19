@@ -279,8 +279,7 @@ def _resolve_placeholder_edges(edges: dict[str, set[str]], method_defs_by_name: 
                 # Prefer bounded expansion to avoid blow-ups.
                 cands = method_defs_by_name.get(name, [])
                 for mid in cands[:20]:
-                    if mid != src:
-                        out.add(mid)
+                    out.add(mid)
             else:
                 out.add(dst)
         resolved[src] = out
@@ -305,7 +304,7 @@ class JavaGraph:
     method_flags: dict[str, dict]
     entrypoints: list[EntryPoint]
     sinks: list[Sink]
-    catch_blocks: list[str]
+    catch_blocks: list[dict]
     security_constructs: list[dict]
 
     @property
@@ -492,7 +491,8 @@ class JavaGraph:
         fail_open = 0
         ambiguous = 0
         empty = 0
-        for body in self.catch_blocks:
+        for cb in self.catch_blocks:
+            body = cb["body_text"] if isinstance(cb, dict) else cb
             stripped = re.sub(r"\s+", "", body)
             if stripped in {"{}", "{/* */}", "{//}"}:
                 empty += 1
@@ -555,7 +555,8 @@ class JavaGraph:
             return {"ETI": 0.0, "catches_total": 0, "leaks": 0, "swallowed": 0}
         leaks = 0
         swallowed = 0
-        for body in self.catch_blocks:
+        for cb in self.catch_blocks:
+            body = cb["body_text"] if isinstance(cb, dict) else cb
             stripped = re.sub(r"\s+", "", body)
             if stripped == "{}":
                 swallowed += 1
@@ -674,7 +675,7 @@ def build_java_graph(repo_dir: Path, *, max_files: int | None) -> JavaGraph:
     entrypoints: list[EntryPoint] = []
     sinks: list[Sink] = []
     edges: dict[str, set[str]] = {}
-    catch_blocks: list[str] = []
+    catch_blocks: list[dict] = []
     security_constructs: list[dict] = []
 
     files = []
@@ -757,6 +758,7 @@ def build_java_graph(repo_dir: Path, *, max_files: int | None) -> JavaGraph:
                 "class_kind": "concrete" if class_kind == "concrete" else "abstract",
                 "is_test": is_test,
                 "rel_path": str(path.relative_to(repo_dir)),
+                "start_line": m.start_point[0] + 1,
             }
             method_flags[mid] = flags
 
@@ -781,7 +783,12 @@ def build_java_graph(repo_dir: Path, *, max_files: int | None) -> JavaGraph:
             for cc in _find_children(m, "catch_clause"):
                 block = _first_child(cc, "block")
                 if block:
-                    catch_blocks.append(_node_text(src, block))
+                    catch_blocks.append({
+                        "method_id": mid,
+                        "rel_path": str(path.relative_to(repo_dir)),
+                        "start_line": cc.start_point[0] + 1,
+                        "body_text": _node_text(src, block),
+                    })
 
             # naive sinks detection from body text and annotations
             if body_text:
