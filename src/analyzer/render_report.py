@@ -1018,31 +1018,6 @@ html, body {{
   color: var(--text-tertiary);
   margin-left: auto;
 }}
-.finding-card {{
-  border: 1px solid var(--border);
-  background: var(--surface-1);
-  padding: 0.875rem 1rem;
-  margin-bottom: 0.5rem;
-  transition: border-color 0.15s;
-}}
-.finding-card:hover {{
-  border-color: var(--border-strong);
-}}
-.finding-header {{
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.5rem;
-}}
-.finding-metric {{
-  font-size: 0.6875rem;
-  font-weight: 700;
-  padding: 0.15rem 0.4rem;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  color: var(--text-secondary);
-  letter-spacing: 0.05em;
-}}
 .finding-severity {{
   font-size: 0.5625rem;
   font-weight: 600;
@@ -1055,30 +1030,6 @@ html, body {{
 .finding-severity.high {{ color: #fb923c; border-color: rgba(251,146,60,0.4); background: rgba(251,146,60,0.1); }}
 .finding-severity.medium {{ color: #fbbf24; border-color: rgba(251,191,36,0.4); background: rgba(251,191,36,0.1); }}
 .finding-severity.low {{ color: #34d399; border-color: rgba(52,211,153,0.4); background: rgba(52,211,153,0.1); }}
-.finding-location {{
-  font-size: 0.6875rem;
-  color: var(--text-tertiary);
-  margin-left: auto;
-  font-family: 'JetBrains Mono', 'SF Mono', monospace;
-}}
-.finding-what {{
-  font-size: 0.8125rem;
-  color: var(--text-primary);
-  margin-bottom: 0.375rem;
-  line-height: 1.4;
-}}
-.finding-detail {{
-  font-size: 0.6875rem;
-  color: var(--text-secondary);
-  line-height: 1.5;
-}}
-.finding-detail strong {{
-  color: var(--text-tertiary);
-  font-weight: 600;
-  text-transform: uppercase;
-  font-size: 0.5625rem;
-  letter-spacing: 0.05em;
-}}
 .no-findings {{
   text-align: center;
   padding: 3rem;
