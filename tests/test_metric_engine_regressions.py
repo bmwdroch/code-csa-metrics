@@ -109,6 +109,64 @@ class MetricE1RegressionTests(unittest.TestCase):
         self.assertEqual(out["E1"]["internal_prefix"], "com.mycompany")
         self.assertEqual(out["E1"]["counts"]["internal"], 1)
 
+    def test_e1_parses_gradle_map_style_dependencies(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_dir = Path(tmp)
+            gradle = repo_dir / "build.gradle"
+            gradle.write_text(
+                "group = 'com.example'\n"
+                "dependencies {\n"
+                "  implementation group: 'org.springframework.boot', name: 'spring-boot-starter'\n"
+                "  implementation(group: 'com.vendor', name: 'utility-lib', version: '1.2.3')\n"
+                "  testImplementation group: 'org.crypto', name: 'crypto-core'\n"
+                "}\n",
+                encoding="utf-8",
+            )
+            out = metrics.compute_all_metrics(
+                repo_dir,
+                spec_headers=[{"id": "E1", "title": "OSDR"}],
+                mode="fast",
+                max_graph_depth=3,
+            )
+
+        self.assertEqual(out["E1"]["status"], "ok")
+        self.assertEqual(out["E1"]["total_dependencies"], 3)
+        self.assertEqual(out["E1"]["counts"]["baseline"], 1)
+        self.assertEqual(out["E1"]["counts"]["other"], 1)
+        self.assertEqual(out["E1"]["counts"]["risky_security"], 1)
+
+    def test_e1_internal_prefix_uses_namespace_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_dir = Path(tmp)
+            pom = repo_dir / "pom.xml"
+            pom.write_text(
+                "<project>"
+                "<groupId>com.acme</groupId>"
+                "<artifactId>app</artifactId>"
+                "<dependencies>"
+                "<dependency>"
+                "<groupId>com.acme</groupId>"
+                "<artifactId>internal-lib</artifactId>"
+                "</dependency>"
+                "<dependency>"
+                "<groupId>com.acmex</groupId>"
+                "<artifactId>external-lib</artifactId>"
+                "</dependency>"
+                "</dependencies>"
+                "</project>",
+                encoding="utf-8",
+            )
+            out = metrics.compute_all_metrics(
+                repo_dir,
+                spec_headers=[{"id": "E1", "title": "OSDR"}],
+                mode="fast",
+                max_graph_depth=3,
+            )
+
+        self.assertEqual(out["E1"]["internal_prefix"], "com.acme")
+        self.assertEqual(out["E1"]["counts"]["internal"], 1)
+        self.assertEqual(out["E1"]["counts"]["other"], 1)
+
 
 class MetricB2RegressionTests(unittest.TestCase):
     def test_b2_returns_not_available_when_no_path_found_within_depth(self) -> None:

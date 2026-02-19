@@ -763,10 +763,20 @@ _SECURITY_CRYPTO_KEYWORDS: set[str] = {
     "crypto", "cipher", "encryption", "gpg",
 }
 
-_GRADLE_DEP_RE = re.compile(
-    r"""(?:implementation|api|compileOnly|runtimeOnly|testImplementation|testRuntimeOnly)"""
-    r"""\s*[\(]?\s*['"]([^'"]+)['"]""",
-    re.MULTILINE,
+_GRADLE_DEP_DECL_RE = re.compile(
+    r"""^\s*(?:implementation|api|compileOnly|runtimeOnly|testImplementation|testRuntimeOnly)\b""",
+)
+
+_GRADLE_COORD_RE = re.compile(
+    r"""['"]([^'"]+:[^'"]+)['"]""",
+)
+
+_GRADLE_GROUP_ARG_RE = re.compile(
+    r"""\bgroup\s*[:=]\s*['"]([^'"]+)['"]""",
+)
+
+_GRADLE_NAME_ARG_RE = re.compile(
+    r"""\bname\s*[:=]\s*['"]([^'"]+)['"]""",
 )
 
 _GRADLE_GROUP_RE = re.compile(
@@ -793,8 +803,10 @@ def _classify_dependency(
     artifact_lower = artifact_id.lower()
     is_security = any(kw in artifact_lower for kw in _SECURITY_CRYPTO_KEYWORDS)
 
-    if internal_prefix and group_id.startswith(internal_prefix):
-        return "SECURITY_SELF" if is_security else "INTERNAL"
+    if internal_prefix:
+        internal = internal_prefix.strip().rstrip(".")
+        if internal and (group_id == internal or group_id.startswith(internal + ".")):
+            return "SECURITY_SELF" if is_security else "INTERNAL"
 
     for baseline in _BASELINE_GROUPS:
         if group_id == baseline or group_id.startswith(baseline + "."):
@@ -869,15 +881,42 @@ def _parse_gradle_dependencies(gradle_text: str) -> list[dict[str, str]]:
         Список словарей с ключами ``group``, ``artifact``, ``scope``.
     """
     deps: list[dict[str, str]] = []
-    for m in _GRADLE_DEP_RE.finditer(gradle_text):
-        coord = m.group(1)
-        parts = coord.split(":")
-        if len(parts) >= 2:
+    lines = gradle_text.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if not _GRADLE_DEP_DECL_RE.search(line):
+            i += 1
+            continue
+
+        statement = line
+        paren_depth = line.count("(") - line.count(")")
+        j = i
+        while paren_depth > 0 and j + 1 < len(lines):
+            j += 1
+            statement += "\n" + lines[j]
+            paren_depth += lines[j].count("(") - lines[j].count(")")
+
+        group_m = _GRADLE_GROUP_ARG_RE.search(statement)
+        name_m = _GRADLE_NAME_ARG_RE.search(statement)
+        if group_m and name_m:
             deps.append({
-                "group": parts[0],
-                "artifact": parts[1],
+                "group": group_m.group(1).strip(),
+                "artifact": name_m.group(1).strip(),
                 "scope": "compile",
             })
+        else:
+            for coord_m in _GRADLE_COORD_RE.finditer(statement):
+                coord = coord_m.group(1)
+                parts = [p.strip() for p in coord.split(":")]
+                if len(parts) >= 2 and parts[0] and parts[1]:
+                    deps.append({
+                        "group": parts[0],
+                        "artifact": parts[1],
+                        "scope": "compile",
+                    })
+
+        i = j + 1
     return deps
 
 
