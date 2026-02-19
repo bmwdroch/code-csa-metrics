@@ -1086,6 +1086,119 @@ html, body {{
   font-size: 0.875rem;
 }}
 
+/* ======================================================================
+   File Groups (findings tab)
+   ====================================================================== */
+.file-group {{
+  margin-bottom: 0.75rem;
+  border: 1px solid var(--border);
+}}
+.file-group-header {{
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--surface-2);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s;
+}}
+.file-group-header:hover {{
+  background: var(--surface-3);
+}}
+.file-group-name {{
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-family: 'JetBrains Mono', monospace;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}}
+.file-group-count {{
+  font-size: 0.5625rem;
+  font-weight: 600;
+  padding: 0.1rem 0.4rem;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}}
+.file-group-arrow {{
+  font-size: 0.625rem;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+  transition: transform 0.15s;
+}}
+.file-group-body {{
+  border-top: 1px solid var(--border);
+}}
+.file-group-body.collapsed {{
+  display: none;
+}}
+.finding-row {{
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  cursor: pointer;
+  transition: background 0.1s;
+  border-bottom: 1px solid transparent;
+}}
+.finding-row:hover {{
+  background: var(--surface-2);
+}}
+.finding-row:last-child {{
+  border-bottom: none;
+}}
+.finding-row-dot {{
+  font-size: 0.5rem;
+  flex-shrink: 0;
+  margin-top: 0.15rem;
+}}
+.finding-row-what {{
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}}
+.finding-row-line {{
+  font-size: 0.625rem;
+  color: var(--text-tertiary);
+  font-family: 'JetBrains Mono', monospace;
+  flex-shrink: 0;
+}}
+.finding-row-detail {{
+  padding: 0.5rem 0.75rem 0.625rem 2rem;
+  background: var(--surface-1);
+  border-top: 1px solid var(--border);
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}}
+.finding-row-detail.collapsed {{
+  display: none;
+}}
+.finding-row-detail strong {{
+  color: var(--text-tertiary);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.5625rem;
+  letter-spacing: 0.05em;
+}}
+.finding-row-method {{
+  font-size: 0.625rem;
+  color: var(--text-tertiary);
+  font-family: 'JetBrains Mono', monospace;
+  margin-bottom: 0.35rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}}
+
 /* Badges */
 .badge {{
   display: inline-flex;
