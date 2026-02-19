@@ -297,5 +297,96 @@ class JavaGraphHelpersRegressionTests(unittest.TestCase):
         self.assertEqual(resolved["pkg.C#foo()"], {"pkg.C#foo()"})
 
 
+class RenderReportFindingsGroupingTests(unittest.TestCase):
+    """Тесты группировки и сортировки findings для раздела дефектов."""
+
+    def _make_data(self, findings: list[dict]) -> dict:
+        """Минимальный combined.json с заданным списком findings."""
+        return {
+            "analyzer": {
+                "meta": {
+                    "repo_url": "https://example.com/org/repo",
+                    "mode": "fast",
+                    "git_head": "abcd1234",
+                },
+                "metrics": {
+                    "M1": {"export": {"nodes": [], "edges": []}},
+                    "A1": {
+                        "status": "ok",
+                        "ASE": 0.5,
+                        "entrypoints": 0,
+                        "sample": [],
+                        "findings": [],
+                    },
+                    "aggregate": {"score": 0.5, "components": {}},
+                    **{mid: {"status": "ok", "findings": []} for mid in
+                       ["A2","A3","B1","B2","B3","B4","C1","C2","C3","D1","D2","E1","F1","F2","M1"]},
+                },
+            }
+        }
+
+    def test_findings_sorted_by_severity_within_file(self) -> None:
+        """Дефекты внутри файла должны сортироваться critical > high > medium > low."""
+        data = self._make_data([])
+        data["analyzer"]["metrics"]["A1"]["findings"] = [
+            {"metric": "A1", "severity": "medium", "file": "Foo.java", "line": 5, "what": "medium", "why": "", "fix": ""},
+            {"metric": "A1", "severity": "critical", "file": "Foo.java", "line": 1, "what": "critical", "why": "", "fix": ""},
+            {"metric": "A1", "severity": "high", "file": "Foo.java", "line": 3, "what": "high", "why": "", "fix": ""},
+        ]
+
+        graph_data = render_report._build_graph_data(data)
+        findings = graph_data["findings"]
+
+        severities = [f["severity"] for f in findings]
+        self.assertEqual(severities, ["critical", "high", "medium"])
+
+    def test_findings_include_system_level_without_file(self) -> None:
+        """Дефекты без поля file должны попадать в список findings."""
+        data = self._make_data([])
+        data["analyzer"]["metrics"]["B1"] = {
+            "status": "ok",
+            "IDS_system": 0.8,
+            "IDS": 0.8,
+            "findings": [
+                {
+                    "metric": "B1",
+                    "severity": "critical",
+                    "file": None,
+                    "line": None,
+                    "method": None,
+                    "what": "Системный дефект",
+                    "why": "почему",
+                    "fix": "исправление",
+                }
+            ],
+        }
+
+        graph_data = render_report._build_graph_data(data)
+        system_findings = [f for f in graph_data["findings"] if not f.get("file")]
+        self.assertEqual(len(system_findings), 1)
+        self.assertEqual(system_findings[0]["what"], "Системный дефект")
+
+    def test_render_html_contains_file_group_css_class(self) -> None:
+        """Сгенерированный HTML должен содержать CSS-класс .file-group."""
+        data = self._make_data([])
+        graph_data = render_report._build_graph_data(data)
+        html_output = render_report._render_html(graph_data)
+        self.assertIn(".file-group", html_output)
+
+    def test_render_html_contains_finding_row_css_class(self) -> None:
+        """Сгенерированный HTML должен содержать CSS-класс .finding-row."""
+        data = self._make_data([])
+        graph_data = render_report._build_graph_data(data)
+        html_output = render_report._render_html(graph_data)
+        self.assertIn(".finding-row", html_output)
+
+    def test_render_html_groupby_file_js_present(self) -> None:
+        """Сгенерированный JS должен содержать логику группировки по файлу."""
+        data = self._make_data([])
+        graph_data = render_report._build_graph_data(data)
+        html_output = render_report._render_html(graph_data)
+        self.assertIn("fileGroups", html_output)
+
+
 if __name__ == "__main__":
     unittest.main()
