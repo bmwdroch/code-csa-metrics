@@ -84,7 +84,7 @@
 
   <!-- Back link -->
   <div style="margin-top: 1.5rem;">
-    <a href="/{{ token }}/" class="btn-clipped ghost" style="font-size: 0.6875rem;">
+    <a href="{{ url_prefix }}/" class="btn-clipped ghost" style="font-size: 0.6875rem;">
       ← Новый анализ
     </a>
   </div>
@@ -138,7 +138,7 @@
 
 {% block scripts %}
 <script>
-  const TOKEN  = {{ token | tojson }};
+  const URL_PREFIX = {{ url_prefix | tojson }};
   const JOB_ID = {{ job.id | tojson }};
 
   // ── DOM refs ─────────────────────────────────────────────────────────────────
@@ -246,7 +246,7 @@
   let retryDelay = 1000;
 
   function connect() {
-    const url = `/${TOKEN}/api/job/${JOB_ID}/events`;
+    const url = `${URL_PREFIX}/api/job/${JOB_ID}/events`;
     const es  = new EventSource(url);
 
     es.addEventListener('progress', function (e) {

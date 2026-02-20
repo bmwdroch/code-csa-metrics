@@ -24,6 +24,7 @@ services:
       - ${CSQA_DATA_DIR:-/var/lib/csqa}/out:/app/out
     environment:
       CSA_WEB_TOKEN: ${CSA_WEB_TOKEN:-}
+      CSA_BASE_PATH: ${CSA_BASE_PATH:-/csqa-prototype}
       CSQA_HOST_OUT_DIR: ${CSQA_DATA_DIR:-/var/lib/csqa}/out
     restart: unless-stopped
     depends_on:
